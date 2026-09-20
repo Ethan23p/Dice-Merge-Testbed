@@ -100,10 +100,16 @@ const DiceMergeState = (() => {
       const cluster = floodCluster(state, r, c);
       if (cluster.length >= D.MERGE_MIN_CLUSTER) {
         const newValue = state.board[r][c] + 1;
+        // Cells other than the trigger cell disappear into it — recorded
+        // so the renderer can animate them shrinking away before the
+        // board settles into its merged state.
+        const consumed = cluster
+          .filter(([cr, cc]) => !(cr === r && cc === c))
+          .map(([cr, cc]) => ({ r: cr, c: cc }));
         for (const [cr, cc] of cluster) state.board[cr][cc] = 0;
         state.board[r][c] = newValue;
         scoreGained += D.scoreForMerge(newValue, cluster.length);
-        merges.push({ r, c, value: newValue });
+        merges.push({ r, c, value: newValue, consumed });
         worklist.push([r, c]);
       }
     }

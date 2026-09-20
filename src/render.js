@@ -69,10 +69,18 @@ const DiceMergeRender = (() => {
   // happens by dragging the current piece over the board (see main.js),
   // so a cell only needs to display its die and expose its coordinates
   // for the drag controller's hit-testing.
-  function renderBoard(boardEl, state) {
+  //
+  // `options.placedCells` and `options.shrinkCells` let main.js drive a
+  // two-phase merge animation: a first render shows the piece freshly
+  // placed (pre-merge) with the about-to-be-consumed cluster cells
+  // shrinking away, then a second render shows the true, merged state
+  // with the surviving cell popping to its new value.
+  function renderBoard(boardEl, state, options = {}) {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', state.config.boardSize);
     const justMerged = new Set(state.lastMerges.map((m) => `${m.r},${m.c}`));
+    const justPlaced = new Set((options.placedCells || []).map((c) => `${c.r},${c.c}`));
+    const shrinking = new Set((options.shrinkCells || []).map((c) => `${c.r},${c.c}`));
 
     state.board.forEach((row, r) => {
       row.forEach((value, c) => {
@@ -83,8 +91,11 @@ const DiceMergeRender = (() => {
         cell.dataset.c = c;
         cell.setAttribute('aria-label', value ? `die ${value}` : 'empty cell');
         if (value) {
+          const key = `${r},${c}`;
           const die = buildDieNode(value, 'board');
-          if (justMerged.has(`${r},${c}`)) die.classList.add('die--enter');
+          if (justMerged.has(key)) die.classList.add('die--merge-pop');
+          else if (justPlaced.has(key)) die.classList.add('die--place-pop');
+          if (shrinking.has(key)) die.classList.add('die--merge-shrink');
           cell.appendChild(die);
         }
         boardEl.appendChild(cell);

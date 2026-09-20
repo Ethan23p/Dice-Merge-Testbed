@@ -33,6 +33,7 @@
 
   const STORAGE_KEY = 'dice-merge-testbed:v2';
   const DRAG_THRESHOLD_PX = 6;
+  const MERGE_ANIMATION_MS = 260;
 
   function loadSaved() {
     try {
@@ -59,8 +60,8 @@
   let bestScore = saved.bestScore || 0;
   let state = S.createState(config);
 
-  function render() {
-    R.renderBoard(boardEl, state);
+  function render(boardOptions = {}) {
+    R.renderBoard(boardEl, state, boardOptions);
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
     bestEl.textContent = `Best ${bestScore}`;
@@ -81,6 +82,41 @@
   function newGame() {
     state = S.createState(config);
     render();
+  }
+
+  // Places the current piece and animates the result. A merge-free
+  // placement just pops the new die(s) in; a merge instead shows the
+  // piece land in its pre-merge spot with the about-to-be-consumed
+  // cluster shrinking away, then swaps to the true merged state with
+  // the surviving die popping to its new value.
+  function commitPlacement(target) {
+    const piece = state.queue[0];
+    const preBoard = state.board.map((row) => row.slice());
+    const placedCells = S.shapeCellsAt(piece, target.r, target.c);
+
+    S.placePiece(state, target.r, target.c);
+    const merges = state.lastMerges;
+
+    if (!merges.length) {
+      render({ placedCells });
+      return;
+    }
+
+    const justPlacedBoard = preBoard.map((row) => row.slice());
+    placedCells.forEach(({ r, c, value }) => {
+      justPlacedBoard[r][c] = value;
+    });
+    const shrinkCells = merges.flatMap((m) => m.consumed);
+
+    R.renderBoard(
+      boardEl,
+      { config: state.config, board: justPlacedBoard, lastMerges: [] },
+      { placedCells, shrinkCells }
+    );
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
+    R.renderScore(scoreEl, state);
+
+    window.setTimeout(render, MERGE_ANIMATION_MS);
   }
 
   // --- Drag / tap controller -------------------------------------------
@@ -172,18 +208,21 @@
     clearPreview();
 
     if (!dragging) {
-      // A tap: rotate the piece in place instead of placing it.
+      // A tap: rotate the piece in place instead of placing it. The
+      // pulse animation plays even when the shape is symmetric (a
+      // single die) so the tap always reads as having registered.
       if (commit) {
         S.rotateQueueHead(state);
         R.renderQueue(currentPieceEl, nextPieceEl, state);
+        const freshPiece = currentPieceEl.querySelector('.piece');
+        if (freshPiece) freshPiece.classList.add('piece--rotate-pulse');
       }
       drag = null;
       return;
     }
 
     if (commit && target && S.canPlaceAt(state, state.queue[0], target.r, target.c)) {
-      S.placePiece(state, target.r, target.c);
-      render();
+      commitPlacement(target);
       drag = null;
       return;
     }
