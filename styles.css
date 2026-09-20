@@ -1,0 +1,278 @@
+:root {
+  color-scheme: dark;
+  --bg: #000000;
+  --grid-line: #4a4a4a;
+  --cell-bg: #0a0a0a;
+  --accent: #4f8ef7;
+  --text: #f2f2f2;
+  --text-dim: #9a9a9a;
+  --die-radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  display: flex;
+  justify-content: center;
+}
+
+.app {
+  width: 100%;
+  max-width: 480px;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 20px 24px;
+  gap: 28px;
+}
+
+.scoreboard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.score {
+  font-size: 64px;
+  font-weight: 800;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.best {
+  font-size: 14px;
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.board {
+  --board-size: 5;
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 1 / 1;
+  display: grid;
+  grid-template-columns: repeat(var(--board-size), 1fr);
+  grid-template-rows: repeat(var(--board-size), 1fr);
+  gap: 2px;
+  background: var(--grid-line);
+  border: 2px solid var(--grid-line);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cell {
+  background: var(--cell-bg);
+  border: none;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.cell:disabled {
+  cursor: default;
+}
+
+.cell:not(:disabled):hover {
+  background: #161616;
+}
+
+.die {
+  width: 86%;
+  height: 86%;
+  border-radius: var(--die-radius);
+  background: var(--die-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.die-pips {
+  width: 62%;
+  height: 62%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+}
+
+.pip-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pip {
+  width: 32%;
+  height: 32%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.die-label {
+  font-weight: 800;
+  font-size: 1.6rem;
+  color: rgba(0, 0, 0, 0.75);
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.queue .die {
+  width: 64px;
+  height: 64px;
+}
+
+.die--current {
+  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.5);
+}
+
+.die--next {
+  opacity: 0.85;
+  transform: scale(0.94);
+}
+
+.toolbar {
+  margin-top: auto;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding-top: 8px;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  color: var(--accent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.icon-circle {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-circle--ghost {
+  background: none;
+  color: var(--accent);
+}
+
+.icon-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.settings-dialog {
+  background: #141414;
+  color: var(--text);
+  border: 1px solid #2c2c2c;
+  border-radius: 16px;
+  padding: 24px;
+  width: min(320px, 90vw);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.settings-dialog h2 {
+  margin-top: 0;
+}
+
+.settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.settings-row select {
+  background: #222;
+  color: var(--text);
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 6px 10px;
+}
+
+.settings-hint {
+  color: var(--text-dim);
+  font-size: 13px;
+  margin: 0 0 20px;
+}
+
+.dialog-close {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.game-over {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.game-over[hidden] {
+  display: none;
+}
+
+.game-over-card {
+  background: #141414;
+  border: 1px solid #2c2c2c;
+  border-radius: 16px;
+  padding: 32px;
+  text-align: center;
+  min-width: 240px;
+}
+
+.game-over-card h2 {
+  margin-top: 0;
+}
+
+.play-again {
+  margin-top: 16px;
+  padding: 10px 24px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
