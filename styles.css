@@ -17,6 +17,9 @@ html, body {
   height: 100%;
   margin: 0;
   overscroll-behavior: none;
+  /* The layout below is designed to always fit within the viewport —
+     nothing here should ever need to scroll. */
+  overflow: hidden;
 }
 
 body {
@@ -31,21 +34,44 @@ body {
 .app {
   width: 100%;
   max-width: 480px;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
-  gap: 24px;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(14px, env(safe-area-inset-bottom));
+  gap: clamp(10px, 2.5dvh, 24px);
 }
 
 @media (max-width: 360px) {
   .app {
     padding-left: 12px;
     padding-right: 12px;
-    gap: 18px;
   }
+}
+
+/* Everything except the board takes its natural size; the board is
+   the one flexible element, so it's what shrinks first on a short
+   viewport instead of the page overflowing into a scrollbar. */
+.scoreboard,
+.queue-panel,
+.toolbar {
+  flex: 0 0 auto;
+}
+
+.board-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Establishes a query container so .board's cqh below can size
+     itself off this box's actual available height, not just its
+     width — a plain max-height on an aspect-ratio box clamps height
+     without feeding back into width, which squashes the board into a
+     non-square rectangle instead of shrinking it as a square. */
+  container-type: size;
 }
 
 .scoreboard {
@@ -73,6 +99,10 @@ body {
   --board-size: 5;
   width: 100%;
   max-width: 420px;
+  /* Enhancement over the width:100% fallback above: picks whichever
+     of available width or available height is tighter, so the board
+     always shrinks as a square rather than a squashed rectangle. */
+  width: min(100%, 420px, 100cqh);
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-columns: repeat(var(--board-size), 1fr);
@@ -104,16 +134,18 @@ body {
 
 /* A placed die falls into its cell rather than popping in place: it
    eases in from above (accelerating, like gravity) then squashes flat
-   and rebounds on impact before settling — weight, not a fade-in.
-   render.js sets --drop-strength to sqrt(mass) and stretches the
-   animation-duration by the same amount (D.scaleWithMass), so a
-   value-1 die (mass 1, strength 1) reproduces these exact numbers —
-   1.14/0.82/0.95/1.06 — while a heavier die squashes flatter and
-   rebounds harder. Capped with min()/max() so a rare huge mass
-   doesn't flatten the die into nothing. */
+   and rebounds on impact before settling. Motion and scale carry the
+   whole effect — no opacity fade — so it reads as one clear physical
+   event instead of a fade layered under it. render.js sets
+   --drop-strength to sqrt(mass) and stretches the animation-duration
+   by the same amount (D.scaleWithMass), so a value-1 die (mass 1,
+   strength 1) reproduces these exact numbers — 1.14/0.82/0.95/1.06 —
+   while a heavier die squashes flatter and rebounds harder. Capped
+   with min()/max() so a rare huge mass doesn't flatten the die into
+   nothing. */
 @keyframes die-drop-in {
-  0% { transform: translateY(-180%) scale(0.92); opacity: 0; }
-  55% { transform: translateY(0) scale(1); opacity: 1; }
+  0% { transform: translateY(-180%) scale(0.92); }
+  55% { transform: translateY(0) scale(1); }
   70% {
     transform: translateY(0)
       scaleX(min(1.5, calc(1 + 0.14 * var(--drop-strength, 1))))

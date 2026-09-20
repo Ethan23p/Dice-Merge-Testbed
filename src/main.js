@@ -34,14 +34,22 @@
 
   const STORAGE_KEY = 'dice-merge-testbed:v2';
   const DRAG_THRESHOLD_PX = 6;
-  const MERGE_ANIMATION_MS = 260;
-  const ROTATE_ANIMATION_MS = 220;
+  const ROTATE_ANIMATION_MS = 360;
+  // A consumed die's flight is paced per lateral hop, not as one total
+  // divided across however many hops it has — so a longer path takes
+  // proportionally longer instead of the same total time getting cut
+  // into thinner, harder-to-follow slices.
+  const BASE_HOP_MS = 300;
   // Every *_MS above is tuned for a mass-1 (value-1) die and scaled up
   // from there via D.scaleWithMass — these caps just stop an extreme
   // late-game value from stretching an animation absurdly long.
-  const MAX_ROTATE_MS = 500;
-  const MAX_CONVERGE_MS = 500;
-  const MAX_SETTLE_MS = 900;
+  const MAX_ROTATE_MS = 700;
+  const MAX_HOP_MS = 460;
+  const MAX_SETTLE_MS = 1600;
+
+  function hopDurationForValue(value) {
+    return Math.min(MAX_HOP_MS, D.scaleWithMass(BASE_HOP_MS, D.massForValue(value)));
+  }
 
   // Drag-follow spring: near-critically-damped, so the held piece lags
   // the pointer just enough to read as having weight without feeling
@@ -167,8 +175,17 @@
       return;
     }
 
-    const maxMass = Math.max(...waveMerges.map((m) => D.massForValue(m.value)));
-    const waveMs = Math.min(MAX_SETTLE_MS, D.scaleWithMass(MERGE_ANIMATION_MS, maxMass));
+    // This wave's total flight time is however long its longest actual
+    // path takes at a legible per-hop pace — not a flat mass-based
+    // guess — so the next wave never starts before every die in this
+    // one has visibly finished traveling.
+    let waveMs = 0;
+    waveMerges.forEach((m) => {
+      const hopMs = hopDurationForValue(m.value);
+      const maxHops = m.consumed.reduce((max, c) => Math.max(max, c.path.length - 1), 0);
+      waveMs = Math.max(waveMs, maxHops * hopMs);
+    });
+    waveMs = Math.min(MAX_SETTLE_MS, waveMs);
 
     animateMergeConvergence(waveMerges);
 
@@ -205,25 +222,38 @@
   // never a diagonal cut through cells it was never linked to. A die
   // farther from the survivor (bigger `hop`) renders above nearer
   // ones, so it visibly slides over them as the cluster gathers rather
-  // than passing beneath. Only the final hop shrinks and fades away;
-  // every earlier hop is a plain, full-size slide from cell to cell.
+  // than passing beneath. Every hop travels at the same pace
+  // (hopDurationForValue), so a longer path just takes proportionally
+  // longer rather than being squeezed into the same total time.
   function animateMergeConvergence(merges) {
     merges.forEach((m) => {
-      const convergeMs = Math.min(MAX_CONVERGE_MS, D.scaleWithMass(220, D.massForValue(m.value)));
+      const hopMs = hopDurationForValue(m.value);
       m.consumed.forEach(({ path, hop }) => {
         const start = path[0];
         const dieEl = boardEl.querySelector(`.cell[data-r="${start.r}"][data-c="${start.c}"] .die`);
-        if (dieEl) flyDieAlongPath(dieEl, path, convergeMs, hop);
+        if (dieEl) flyDieAlongPath(dieEl, path, hopMs, hop);
       });
     });
   }
 
-  function flyDieAlongPath(dieEl, path, totalMs, hop) {
+  // Shrinks a die to nothing on arrival rather than fading it — no
+  // opacity change at all, so "being absorbed" reads as one clear
+  // visual language (shrinking) instead of two competing ones (shrink
+  // + fade) layered on top of each other.
+  function flyDieAlongPath(dieEl, path, hopMs, hop) {
     const segments = path.length - 1;
     if (segments <= 0) return;
+
+    // This die may already be mid-flight from a CSS keyframe (e.g. it
+    // was just placed and is still playing its drop-in pop) — an
+    // active `animation` and this JS-driven `transition` would both
+    // fight over `transform` at once, which is exactly the kind of
+    // overlap that reads as broken. Hand the die over cleanly first.
+    dieEl.style.animation = 'none';
+    dieEl.classList.remove('die--place-pop', 'die--merge-target');
+
     dieEl.style.position = 'relative';
     dieEl.style.zIndex = String(5 + hop);
-    const segmentMs = totalMs / segments;
 
     let totalDx = 0;
     let totalDy = 0;
@@ -237,14 +267,11 @@
       totalDx += to.x - from.x;
       totalDy += to.y - from.y;
       const isFinal = i === segments;
-      dieEl.style.transition = isFinal
-        ? `transform ${segmentMs}ms cubic-bezier(.4, 0, .2, 1), opacity ${segmentMs}ms ease-in`
-        : `transform ${segmentMs}ms linear`;
+      dieEl.style.transition = `transform ${hopMs}ms ${isFinal ? 'cubic-bezier(.4, 0, .2, 1)' : 'linear'}`;
       dieEl.style.transform = isFinal
-        ? `translate(${totalDx}px, ${totalDy}px) scale(0.25)`
+        ? `translate(${totalDx}px, ${totalDy}px) scale(0.15)`
         : `translate(${totalDx}px, ${totalDy}px)`;
-      if (isFinal) dieEl.style.opacity = '0';
-      if (i < segments) window.setTimeout(step, segmentMs);
+      if (i < segments) window.setTimeout(step, hopMs);
     }
     requestAnimationFrame(step);
   }

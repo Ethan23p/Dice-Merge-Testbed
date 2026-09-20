@@ -6,8 +6,8 @@
  */
 const DiceMergeRender = (() => {
   const D = DiceMergeData;
-  const BASE_DROP_MS = 320;
-  const MAX_DROP_MS = 700;
+  const BASE_DROP_MS = 480;
+  const MAX_DROP_MS = 1000;
 
   function buildDieNode(value, variant = 'board') {
     const die = document.createElement('div');
