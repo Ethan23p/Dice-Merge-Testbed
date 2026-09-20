@@ -39,7 +39,9 @@ const DiceMergeRender = (() => {
   }
 
   // Renders a piece as a small grid matching its own bounding box, so
-  // a 1-, 2-, or 3-cell piece all read as one connected shape.
+  // a 1-, 2-, or 3-cell piece all read as one connected shape. Every
+  // slot (die or empty spacer) carries its own (dr, dc) offset so a
+  // drag can tell which part of the piece was grabbed.
   function buildPieceNode(piece, variant) {
     const rows = Math.max(...piece.cells.map((c) => c.dr)) + 1;
     const cols = Math.max(...piece.cells.map((c) => c.dc)) + 1;
@@ -53,42 +55,37 @@ const DiceMergeRender = (() => {
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const cell = byOffset.get(`${r},${c}`);
-        if (cell) {
-          wrap.appendChild(buildDieNode(cell.value, variant));
-        } else {
-          const spacer = document.createElement('div');
-          spacer.className = 'piece-spacer';
-          wrap.appendChild(spacer);
-        }
+        const slot = cell ? buildDieNode(cell.value, variant) : document.createElement('div');
+        if (!cell) slot.className = 'piece-spacer';
+        slot.dataset.dr = r;
+        slot.dataset.dc = c;
+        wrap.appendChild(slot);
       }
     }
     return wrap;
   }
 
-  function renderBoard(boardEl, state, handlers) {
-    const { onCellClick, onCellEnter, onCellLeave } = handlers;
+  // Board cells are plain, non-interactive tiles — placement now
+  // happens by dragging the current piece over the board (see main.js),
+  // so a cell only needs to display its die and expose its coordinates
+  // for the drag controller's hit-testing.
+  function renderBoard(boardEl, state) {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', state.config.boardSize);
     const justMerged = new Set(state.lastMerges.map((m) => `${m.r},${m.c}`));
 
     state.board.forEach((row, r) => {
       row.forEach((value, c) => {
-        const cell = document.createElement('button');
-        cell.type = 'button';
+        const cell = document.createElement('div');
         cell.className = 'cell';
+        cell.setAttribute('role', 'gridcell');
         cell.dataset.r = r;
         cell.dataset.c = c;
         cell.setAttribute('aria-label', value ? `die ${value}` : 'empty cell');
         if (value) {
-          cell.disabled = true;
           const die = buildDieNode(value, 'board');
           if (justMerged.has(`${r},${c}`)) die.classList.add('die--enter');
           cell.appendChild(die);
-        } else {
-          cell.disabled = state.gameOver;
-          cell.addEventListener('click', () => onCellClick(r, c));
-          cell.addEventListener('mouseenter', () => onCellEnter(r, c));
-          cell.addEventListener('mouseleave', () => onCellLeave());
         }
         boardEl.appendChild(cell);
       });

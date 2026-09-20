@@ -16,6 +16,7 @@
 html, body {
   height: 100%;
   margin: 0;
+  overscroll-behavior: none;
 }
 
 body {
@@ -24,17 +25,27 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   display: flex;
   justify-content: center;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app {
   width: 100%;
   max-width: 480px;
+  min-height: 100vh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 32px 20px 24px;
-  gap: 28px;
+  padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  gap: 24px;
+}
+
+@media (max-width: 360px) {
+  .app {
+    padding-left: 12px;
+    padding-right: 12px;
+    gap: 18px;
+  }
 }
 
 .scoreboard {
@@ -45,10 +56,11 @@ body {
 }
 
 .score {
-  font-size: 64px;
+  font-size: clamp(44px, 14vw, 64px);
   font-weight: 800;
   color: var(--accent);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .best {
@@ -74,20 +86,10 @@ body {
 
 .cell {
   background: var(--cell-bg);
-  border: none;
-  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-}
-
-.cell:disabled {
-  cursor: default;
-}
-
-.cell:not(:disabled):hover {
-  background: #161616;
+  transition: background 100ms ease;
 }
 
 .cell.preview-valid {
@@ -162,12 +164,6 @@ body {
   color: var(--text-dim);
 }
 
-.queue-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
 .piece {
   display: grid;
   gap: 4px;
@@ -195,21 +191,33 @@ body {
   box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.5);
 }
 
-.rotate-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1px solid var(--grid-line);
-  background: transparent;
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+.piece--current {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  will-change: transform;
+  animation: piece-pop 160ms ease-out;
 }
 
-.rotate-btn:hover {
-  background: #161616;
+.piece--dragging {
+  cursor: grabbing;
+  position: relative;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.piece--dragging .die {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
+}
+
+.piece--snapback {
+  transition: transform 180ms cubic-bezier(.2, .8, .3, 1.2);
+}
+
+@keyframes piece-pop {
+  from { transform: scale(0.85); opacity: 0.6; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 .toolbar {
@@ -231,6 +239,7 @@ body {
   gap: 8px;
   cursor: pointer;
   font-family: inherit;
+  touch-action: manipulation;
 }
 
 .icon-circle {
@@ -302,6 +311,7 @@ body {
   color: #fff;
   font-weight: 700;
   cursor: pointer;
+  touch-action: manipulation;
 }
 
 .game-over {
@@ -311,6 +321,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
 }
 
 .game-over[hidden] {
@@ -339,4 +350,5 @@ body {
   color: #fff;
   font-weight: 700;
   cursor: pointer;
+  touch-action: manipulation;
 }
