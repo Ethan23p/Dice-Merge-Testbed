@@ -34,23 +34,25 @@
 
   const STORAGE_KEY = 'dice-merge-testbed:v2';
   const DRAG_THRESHOLD_PX = 6;
-  const ROTATE_ANIMATION_MS = 360;
+  const ROTATE_ANIMATION_MS = 180;
   // A consumed die's flight is paced per lateral hop, not as one total
   // divided across however many hops it has — so a longer path takes
   // proportionally longer instead of the same total time getting cut
   // into thinner, harder-to-follow slices.
-  const BASE_HOP_MS = 300;
+  const BASE_HOP_MS = 170;
   // Every *_MS above is tuned for a mass-1 (value-1) die and scaled up
   // from there via D.scaleWithMass — these caps just stop an extreme
   // late-game value from stretching an animation absurdly long.
-  const MAX_ROTATE_MS = 700;
-  const MAX_HOP_MS = 460;
-  const MAX_SETTLE_MS = 1600;
-  // Pauses at the seams between a turn's distinct steps (land, then
-  // slide, then transform) so each one registers instead of the whole
-  // sequence blurring into continuous motion.
-  const LANDING_BEAT_MS = 150;
-  const SETTLE_BEAT_MS = 120;
+  const MAX_ROTATE_MS = 360;
+  const MAX_HOP_MS = 260;
+  const MAX_SETTLE_MS = 900;
+  // A placement has no landing animation of its own (see render.js), so
+  // there's nothing to wait out before a merge starts converging —
+  // released and placed IS the first frame a merge plays from. Only a
+  // beat between cascade waves remains, so a wave's dice visibly finish
+  // arriving before the next wave's convergence starts.
+  const LANDING_BEAT_MS = 0;
+  const SETTLE_BEAT_MS = 70;
 
   function hopDurationForValue(value) {
     return Math.min(MAX_HOP_MS, D.scaleWithMass(BASE_HOP_MS, D.massForValue(value)));
@@ -65,12 +67,12 @@
   // divides by the dragged piece's actual mass (F=ma), so the SAME
   // stiffness/damping here already makes heavier dice feel heavier
   // without any extra per-tier number.
-  const DRAG_SPRING_STIFFNESS = 260;
-  const DRAG_SPRING_DAMPING = 30;
+  const DRAG_SPRING_STIFFNESS = 340;
+  const DRAG_SPRING_DAMPING = 34;
   const SNAPBACK_STIFFNESS = 170;
   const SNAPBACK_DAMPING = 11;
-  const MAX_TILT_DEG = 12;
-  const TILT_PER_VELOCITY = 0.018; // deg of "lean" per px/s of lateral speed
+  const MAX_TILT_DEG = 6;
+  const TILT_PER_VELOCITY = 0.01; // deg of "lean" per px/s of lateral speed
 
   function loadSaved() {
     try {
@@ -129,14 +131,14 @@
   }
 
   // Places the current piece and animates the result. A merge-free
-  // placement just pops the new die(s) in. A merge instead plays out
-  // wave by wave (see S.resolveMerges): each wave's consumed dice fly
-  // to their survivor along their own real lateral connectivity, and
-  // the next wave only starts once this one has visually resolved, so
-  // a cascade never appears to begin before the merge that caused it
-  // has finished. `selected` is the absolute cell the player was
-  // holding — passed through so a forming merge converges there rather
-  // than on an arbitrary cell of the piece.
+  // placement just appears — no landing animation (see render.js). A
+  // merge instead plays out wave by wave (see S.resolveMerges): each
+  // wave's consumed dice fly to their survivor along their own real
+  // lateral connectivity, and the next wave only starts once this one
+  // has visually resolved, so a cascade never appears to begin before
+  // the merge that caused it has finished. `selected` is the absolute
+  // cell the player was holding — passed through so a forming merge
+  // converges there rather than on an arbitrary cell of the piece.
   function commitPlacement(target, selected) {
     const piece = state.queue[0];
     const preBoard = state.board.map((row) => row.slice());
@@ -146,7 +148,7 @@
     const merges = state.lastMerges;
 
     if (!merges.length) {
-      render({ placedCells });
+      render();
       return;
     }
 
@@ -160,30 +162,22 @@
       (waves[m.wave] || (waves[m.wave] = [])).push(m);
     });
 
-    // A freshly placed die that wave 0 immediately consumes never
-    // actually rests — it's about to slide into its survivor — so it
-    // skips the landing pop rather than playing one that a heartbeat
-    // later would just be overridden. This is known synchronously
-    // (merges are already fully resolved above), so it's a matter of
-    // not starting the redundant animation, not interrupting one.
-    const consumedInWaveZero = new Set();
-    (waves[0] || []).forEach((m) => {
-      m.consumed.forEach(({ r, c }) => consumedInWaveZero.add(`${r},${c}`));
-    });
-    const settledPlacedCells = placedCells.filter(({ r, c }) => !consumedInWaveZero.has(`${r},${c}`));
-
     R.renderBoard(
       boardEl,
       { config: state.config, board: workingBoard, lastMerges: [] },
-      { placedCells: settledPlacedCells, targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
+      { targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
     );
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
 
-    // A beat to let the placement itself register before anything
-    // starts sliding — the turn's steps stay visually distinct instead
-    // of landing and merging blurring into one motion.
-    window.setTimeout(() => playMergeWaves(waves, 0, workingBoard), LANDING_BEAT_MS);
+    // The placed piece has no landing animation to wait out, so the
+    // very frame that shows it placed is already the frame a merge
+    // converges from — released and placed IS the start of the merge.
+    if (LANDING_BEAT_MS > 0) {
+      window.setTimeout(() => playMergeWaves(waves, 0, workingBoard), LANDING_BEAT_MS);
+    } else {
+      playMergeWaves(waves, 0, workingBoard);
+    }
   }
 
   // Plays one wave's convergence, waits for it to visually resolve,
@@ -276,9 +270,8 @@
   // table would. It stays there, fully solid, through the settle beat
   // in playMergeWaves; only once that beat ends does the wave's
   // re-render clear the now-hidden stack and pop the survivor — so
-  // nothing here ever needs to fight over `transform` with a landing
-  // animation, because arriving dice were never given one to begin
-  // with (commitPlacement already skips it for cells wave 0 consumes).
+  // nothing here ever needs to fight over `transform` with another
+  // animation (placed dice have none — see render.js).
   function flyDieAlongPath(dieEl, path, hopMs, hop) {
     const segments = path.length - 1;
     if (segments <= 0) return;
@@ -305,6 +298,25 @@
   }
 
   let rotateSettling = false; // true while dice are still sliding into their new grid slots after a rotation
+  let rotateAnimatedDies = []; // dice mid-FLIP-transition, so a pickup can snap them to rest instead of waiting
+  let rotateSettleTimeoutId = null;
+
+  // Snaps any in-progress rotate FLIP straight to its resting state.
+  // The state and DOM were already updated synchronously at the start
+  // of rotateCurrentPiece — only the visual transition is still
+  // playing — so cutting it short here just skips the tween, it never
+  // leaves state and DOM out of sync. Lets a pickup grab the piece the
+  // instant it's pressed instead of waiting on the spin to finish.
+  function interruptRotateSettle() {
+    if (!rotateSettling) return;
+    clearTimeout(rotateSettleTimeoutId);
+    rotateAnimatedDies.forEach((dieEl) => {
+      dieEl.style.transition = '';
+      dieEl.style.transform = '';
+    });
+    rotateAnimatedDies = [];
+    rotateSettling = false;
+  }
 
   // Rotates the queued piece 90° clockwise. Individual dice never spin
   // in place — only their positions move, each die sliding in a
@@ -318,7 +330,8 @@
   // the freshly-rendered (upright) shape swapped in.
   function rotateCurrentPiece() {
     const pieceEl = currentPieceEl.querySelector('.piece');
-    if (!pieceEl || rotateSettling) return;
+    if (!pieceEl) return;
+    interruptRotateSettle();
 
     const oldPiece = state.queue[0];
     const rotatedPiece = D.rotatePiece(oldPiece);
@@ -356,12 +369,14 @@
       dieEl.style.transition = `transform ${rotateMs}ms cubic-bezier(.3, .7, .4, 1)`;
       dieEl.style.transform = 'translate(0, 0)';
     });
+    rotateAnimatedDies = animatedDies;
 
-    window.setTimeout(() => {
-      animatedDies.forEach((dieEl) => {
+    rotateSettleTimeoutId = window.setTimeout(() => {
+      rotateAnimatedDies.forEach((dieEl) => {
         dieEl.style.transition = '';
         dieEl.style.transform = '';
       });
+      rotateAnimatedDies = [];
       rotateSettling = false;
     }, rotateMs + 40);
   }
@@ -370,6 +385,23 @@
 
   let drag = null; // { pointerId, pieceEl, grabDr, grabDc, startX, startY, dragging, target, ...physics }
   let dragLocked = false; // true while a released piece is still springing back into its slot
+  let springBackCancelFns = []; // cancels the in-progress springBack, so a pickup can interrupt it
+  let springBackPieceEl = null;
+
+  // Stops an in-progress springBack immediately and leaves the piece
+  // usable — lets a pickup grab a piece that's still snapping back
+  // from a rejected drop instead of waiting for it to settle.
+  function interruptSpringBack() {
+    if (!dragLocked) return;
+    springBackCancelFns.forEach((cancel) => cancel && cancel());
+    springBackCancelFns = [];
+    if (springBackPieceEl) {
+      springBackPieceEl.classList.remove('piece--dragging');
+      springBackPieceEl.style.transform = '';
+    }
+    springBackPieceEl = null;
+    dragLocked = false;
+  }
 
   // Runs every frame while a piece is held: the piece's on-screen
   // position chases the pointer's offset (drag.targetX/Y) through a
@@ -403,6 +435,7 @@
   // overshoots and settles more slowly on the way back.
   function springBack(pieceEl, startX, startY, velX, velY, mass) {
     dragLocked = true;
+    springBackPieceEl = pieceEl;
     const pos = { x: startX, y: startY };
     let pending = 2;
     const applyTransform = () => {
@@ -414,8 +447,10 @@
       pieceEl.classList.remove('piece--dragging');
       pieceEl.style.transform = '';
       dragLocked = false;
+      springBackCancelFns = [];
+      springBackPieceEl = null;
     };
-    P.runSpring({
+    const cancelX = P.runSpring({
       from: startX,
       velocity: velX,
       target: 0,
@@ -428,7 +463,7 @@
       },
       onSettle: onDone,
     });
-    P.runSpring({
+    const cancelY = P.runSpring({
       from: startY,
       velocity: velY,
       target: 0,
@@ -441,6 +476,7 @@
       },
       onSettle: onDone,
     });
+    springBackCancelFns = [cancelX, cancelY];
   }
 
   // Shakes the board cells a rejected placement would have occupied —
@@ -501,7 +537,13 @@
   }
 
   function onPointerDown(e) {
-    if (state.gameOver || drag || dragLocked || rotateSettling) return;
+    if (state.gameOver || drag) return;
+    // Picking up the piece is never blocked by an animation still
+    // playing on it — a mid-flight rotate or a not-yet-settled
+    // snapback is interrupted (not waited out) so the piece is always
+    // grabbable the instant it's pressed.
+    interruptRotateSettle();
+    interruptSpringBack();
     const slot = e.target.closest('[data-dr]');
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!slot || !pieceEl) return;
