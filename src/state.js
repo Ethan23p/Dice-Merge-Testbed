@@ -87,9 +87,12 @@ const DiceMergeState = (() => {
   }
 
   // Starting from the cells a piece just occupied, merges any
-  // same-value cluster of MERGE_MIN_CLUSTER+ into a single die at the
-  // cell that triggered it, one value higher. Re-checks that cell
-  // afterward so a merge can chain into a bigger neighboring cluster.
+  // same-value cluster of MERGE_MIN_CLUSTER+ by conserving its combined
+  // mass (see D.resolveClusterMass) into a single die at the cell that
+  // triggered it — a bigger cluster can jump more than one tier in one
+  // go, since it's carrying more mass into the collapse. Re-checks that
+  // cell afterward so a merge can chain into a bigger neighboring
+  // cluster.
   function resolveMerges(state, seedCells) {
     let scoreGained = 0;
     const merges = [];
@@ -99,7 +102,8 @@ const DiceMergeState = (() => {
       if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
       const cluster = floodCluster(state, r, c);
       if (cluster.length >= D.MERGE_MIN_CLUSTER) {
-        const newValue = state.board[r][c] + 1;
+        const value = state.board[r][c];
+        const { newValue, massReleased, score } = D.resolveClusterMass(value, cluster.length);
         // Cells other than the trigger cell disappear into it — recorded
         // so the renderer can animate them shrinking away before the
         // board settles into its merged state.
@@ -108,8 +112,8 @@ const DiceMergeState = (() => {
           .map(([cr, cc]) => ({ r: cr, c: cc }));
         for (const [cr, cc] of cluster) state.board[cr][cc] = 0;
         state.board[r][c] = newValue;
-        scoreGained += D.scoreForMerge(newValue, cluster.length);
-        merges.push({ r, c, value: newValue, consumed });
+        scoreGained += score;
+        merges.push({ r, c, value: newValue, consumed, massReleased });
         worklist.push([r, c]);
       }
     }

@@ -82,10 +82,11 @@ const DiceMergeRender = (() => {
     const justMerged = new Set(state.lastMerges.map((m) => `${m.r},${m.c}`));
     const justPlaced = new Set((options.placedCells || []).map((c) => `${c.r},${c.c}`));
     const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
-    // Cluster size (survivor + consumed) drives how hard the merge-pop
-    // impact hits — a bigger merge should visibly land with more mass.
+    // The mass released by the merge (see D.resolveClusterMass) drives
+    // how hard the merge-pop impact hits — a bigger release visibly
+    // lands with more force, the same quantity that fed the score.
     const impactByKey = new Map(
-      state.lastMerges.map((m) => [`${m.r},${m.c}`, m.consumed.length + 1])
+      state.lastMerges.map((m) => [`${m.r},${m.c}`, m.massReleased])
     );
 
     state.board.forEach((row, r) => {

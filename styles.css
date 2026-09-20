@@ -146,14 +146,17 @@ body {
   animation-timing-function: cubic-bezier(.3, .6, .25, 1), ease-out;
 }
 
-/* Impact scales with how much mass just landed on the surviving cell:
-   main.js sets --merge-impact to the consumed cluster's size (3+), so a
-   3-of-a-kind gives a light bump while a bigger chain hits harder. */
+/* Impact scales with the mass the merge actually released (see
+   D.resolveClusterMass): render.js sets --merge-impact to that amount,
+   so a minimal 3-of-a-kind (releases 1) gives a light bump while a
+   bigger simultaneous cluster — which releases more and can jump
+   several value tiers at once — visibly hits harder. Capped with min()
+   so a rare huge release doesn't blow the die out of its cell. */
 @keyframes die-merge-pop {
   0% { transform: scale(0.6); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
   45% {
-    transform: scale(calc(1.15 + 0.045 * (var(--merge-impact, 3) - 3)));
-    box-shadow: 0 0 0 calc(8px + 2.5px * (var(--merge-impact, 3) - 3)) rgba(255, 255, 255, 0);
+    transform: scale(min(1.6, calc(1.15 + 0.09 * (var(--merge-impact, 1) - 1))));
+    box-shadow: 0 0 0 min(24px, calc(8px + 3px * (var(--merge-impact, 1) - 1))) rgba(255, 255, 255, 0);
   }
   100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
 }
