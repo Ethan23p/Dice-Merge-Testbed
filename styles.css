@@ -12,8 +12,15 @@
      a small px floor/ceiling — never a bare px value. That's what
      makes the board "win": on a short viewport these shrink together
      with it instead of holding a fixed footprint that eats the
-     board's share. See the comment on .board-shell. */
-  --queue-die: clamp(14px, 3.2dvh, 44px);
+     board's share. See the comment on .board-shell.
+
+     --queue-die is the exception to "shrink as far as it wants": it's
+     the piece the player actually drags, so its floor is a real touch
+     target (~44px, the iOS/Android minimum) rather than a cosmetic
+     minimum — a die you can't reliably grab is a functional bug, not
+     just a smaller visual. --queue-die-next is purely a preview (never
+     touched), so it keeps a cosmetic floor. */
+  --queue-die: clamp(44px, 3.6dvh, 56px);
   --queue-die-next: clamp(12px, 2.4dvh, 32px);
 }
 

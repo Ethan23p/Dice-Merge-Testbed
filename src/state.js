@@ -101,12 +101,10 @@ const DiceMergeState = (() => {
   }
 
   // Starting from the cells a piece just occupied, merges any
-  // same-value cluster of MERGE_MIN_CLUSTER+ by conserving its combined
-  // mass (see D.resolveClusterMass) into a single die at the cell that
-  // triggered it — a bigger cluster can jump more than one tier in one
-  // go, since it's carrying more mass into the collapse. Re-checks that
-  // cell afterward so a merge can chain into a bigger neighboring
-  // cluster.
+  // same-value cluster of MERGE_MIN_CLUSTER+ into a single value+1 die
+  // at the cell that triggered it (see D.resolveClusterMass) — always
+  // exactly one tier, however large the cluster. Re-checks that cell
+  // afterward so a merge can chain into a bigger neighboring cluster.
   //
   // Each merge is tagged with a `wave`: 0 for a merge triggered
   // directly by the placement (independent of any other merge from

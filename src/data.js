@@ -45,24 +45,12 @@ const DiceMergeData = (() => {
     return PIP_LAYOUTS[value] || null;
   }
 
-  // Every die value stands for a "mass" that doubles per tier — the one
-  // physical law the rest of the merge/score system is derived from,
-  // rather than each being its own hand-picked rule:
+  // Every die value stands for a "mass" that doubles per tier — used
+  // for scoring and animation weight (a heavier die drops/impacts
+  // harder), not for deciding what a merge turns into:
   //   mass(1)=1, mass(2)=2, mass(3)=4, mass(4)=8, ...
-  // A merge is that mass being conserved, not an arbitrary "+1": a
-  // cluster's combined mass collapses into the highest single die that
-  // mass can support (so a big simultaneous cluster can jump several
-  // tiers at once, not just one), and whatever mass doesn't fit into
-  // that die is what got "released" — which is also, unmodified, the
-  // score. Nothing here is tuned independently of massForValue.
   function massForValue(value) {
     return 2 ** (value - 1);
-  }
-
-  function valueForMass(mass) {
-    // The tiny epsilon guards against float log2 landing just under an
-    // exact tier boundary (e.g. log2(8) as 2.999999999998).
-    return 1 + Math.floor(Math.log2(mass) + 1e-9);
   }
 
   const SCORE_PER_MASS = 10;
@@ -71,13 +59,15 @@ const DiceMergeData = (() => {
   // threshold, not a value threshold) is what triggers a merge at all.
   const MERGE_MIN_CLUSTER = 3;
 
-  // The single place a cluster's outcome is decided: how much its die
-  // becomes, how much mass didn't fit and was released, and the score
-  // that release is worth.
+  // The single place a cluster's outcome is decided. The merge itself
+  // is simple and fixed: any qualifying cluster becomes one die worth
+  // value+1, however many dice were in it — no jumping multiple tiers
+  // in one merge. Score rewards the mass consumed to get there: bigger
+  // clusters (and heavier dice) are worth more even though they all
+  // land on the same value+1 result.
   function resolveClusterMass(value, clusterSize) {
-    const massBefore = massForValue(value) * clusterSize;
-    const newValue = valueForMass(massBefore);
-    const massReleased = massBefore - massForValue(newValue);
+    const newValue = value + 1;
+    const massReleased = massForValue(value) * clusterSize - massForValue(newValue);
     return { newValue, massReleased, score: massReleased * SCORE_PER_MASS };
   }
 
@@ -213,7 +203,6 @@ const DiceMergeData = (() => {
     spawnWeight,
     rollSpawnValue,
     massForValue,
-    valueForMass,
     SCORE_PER_MASS,
     MERGE_MIN_CLUSTER,
     resolveClusterMass,
