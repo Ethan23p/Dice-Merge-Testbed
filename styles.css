@@ -273,6 +273,26 @@ body {
   grid-template-rows: repeat(var(--piece-rows), 1fr);
 }
 
+/* Reserves the tallest a piece can ever be (3 rows — the biggest
+   shape in SHAPE_LIBRARY) regardless of what's currently showing, so
+   rotating a piece between a 1-row and 3-row orientation never
+   changes this slot's own height. That keeps .queue-panel's total
+   height constant, which is what keeps .board-shell's available
+   space — and so the board's rendered size — stable across a
+   rotation. Sizing this from actual content instead (what it held
+   before this rule existed) makes the board grow and shrink under a
+   piece it has nothing to do with. */
+.piece-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(3 * 52px + 2 * 4px);
+}
+
+.piece-slot--next {
+  min-height: calc(3 * 38px + 2 * 4px);
+}
+
 .piece--current .die,
 .piece--current .piece-spacer {
   width: 52px;
@@ -299,7 +319,6 @@ body {
   user-select: none;
   -webkit-user-select: none;
   will-change: transform;
-  animation: piece-pop 160ms ease-out;
 }
 
 .piece--dragging {
@@ -313,9 +332,20 @@ body {
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
 }
 
+/* Only a piece that genuinely just entered the slot (main.js's
+   general render() path) gets this pop — rotation redraws the same
+   piece via a direct R.renderQueue call that never adds this class,
+   so spinning a piece never replays an "arriving" animation for a
+   piece that was already there. Scale only, no opacity: entering and
+   settling into rotation both read as one visual language (motion),
+   not motion plus an unrelated fade. */
+.piece--entering {
+  animation: piece-pop 160ms ease-out;
+}
+
 @keyframes piece-pop {
-  from { transform: scale(0.85); opacity: 0.6; }
-  to { transform: scale(1); opacity: 1; }
+  from { transform: scale(0.85); }
+  to { transform: scale(1); }
 }
 
 .toolbar {

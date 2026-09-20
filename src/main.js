@@ -46,6 +46,11 @@
   const MAX_ROTATE_MS = 700;
   const MAX_HOP_MS = 460;
   const MAX_SETTLE_MS = 1600;
+  // Pauses at the seams between a turn's distinct steps (land, then
+  // slide, then transform) so each one registers instead of the whole
+  // sequence blurring into continuous motion.
+  const LANDING_BEAT_MS = 150;
+  const SETTLE_BEAT_MS = 120;
 
   function hopDurationForValue(value) {
     return Math.min(MAX_HOP_MS, D.scaleWithMass(BASE_HOP_MS, D.massForValue(value)));
@@ -95,6 +100,13 @@
   function render(boardOptions = {}) {
     R.renderBoard(boardEl, state, boardOptions);
     R.renderQueue(currentPieceEl, nextPieceEl, state);
+    // Only this general render path means "a piece genuinely entered
+    // the slot" (a new game, or the next piece moving up after a
+    // placement) — rotation redraws the same piece by calling
+    // R.renderQueue directly, without this class, so spinning a piece
+    // never also replays its entrance pop.
+    const enteringPieceEl = currentPieceEl.querySelector('.piece');
+    if (enteringPieceEl) enteringPieceEl.classList.add('piece--entering');
     R.renderScore(scoreEl, state);
     bestEl.textContent = `Best ${bestScore}`;
 
@@ -148,15 +160,30 @@
       (waves[m.wave] || (waves[m.wave] = [])).push(m);
     });
 
+    // A freshly placed die that wave 0 immediately consumes never
+    // actually rests — it's about to slide into its survivor — so it
+    // skips the landing pop rather than playing one that a heartbeat
+    // later would just be overridden. This is known synchronously
+    // (merges are already fully resolved above), so it's a matter of
+    // not starting the redundant animation, not interrupting one.
+    const consumedInWaveZero = new Set();
+    (waves[0] || []).forEach((m) => {
+      m.consumed.forEach(({ r, c }) => consumedInWaveZero.add(`${r},${c}`));
+    });
+    const settledPlacedCells = placedCells.filter(({ r, c }) => !consumedInWaveZero.has(`${r},${c}`));
+
     R.renderBoard(
       boardEl,
       { config: state.config, board: workingBoard, lastMerges: [] },
-      { placedCells, targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
+      { placedCells: settledPlacedCells, targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
     );
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
 
-    playMergeWaves(waves, 0, workingBoard);
+    // A beat to let the placement itself register before anything
+    // starts sliding — the turn's steps stay visually distinct instead
+    // of landing and merging blurring into one motion.
+    window.setTimeout(() => playMergeWaves(waves, 0, workingBoard), LANDING_BEAT_MS);
   }
 
   // Plays one wave's convergence, waits for it to visually resolve,
@@ -190,23 +217,30 @@
     animateMergeConvergence(waveMerges);
 
     window.setTimeout(() => {
-      const nextWave = waves[waveIndex + 1];
-      if (!nextWave) {
-        render();
-        return;
-      }
-      waveMerges.forEach((m) => {
-        m.consumed.forEach(({ r, c }) => {
-          workingBoard[r][c] = 0;
+      // Every consumed die has now arrived and is stacked on its
+      // survivor (see flyDieAlongPath) — hold that a beat so "they've
+      // gathered" reads as its own moment before the stack quietly
+      // clears (nothing to see: it's hidden underneath the topmost
+      // die already) and the survivor visibly transforms.
+      window.setTimeout(() => {
+        const nextWave = waves[waveIndex + 1];
+        if (!nextWave) {
+          render();
+          return;
+        }
+        waveMerges.forEach((m) => {
+          m.consumed.forEach(({ r, c }) => {
+            workingBoard[r][c] = 0;
+          });
+          workingBoard[m.r][m.c] = m.value;
         });
-        workingBoard[m.r][m.c] = m.value;
-      });
-      R.renderBoard(
-        boardEl,
-        { config: state.config, board: workingBoard, lastMerges: waveMerges },
-        { targetCells: nextWave.map((m) => ({ r: m.r, c: m.c })) }
-      );
-      playMergeWaves(waves, waveIndex + 1, workingBoard);
+        R.renderBoard(
+          boardEl,
+          { config: state.config, board: workingBoard, lastMerges: waveMerges },
+          { targetCells: nextWave.map((m) => ({ r: m.r, c: m.c })) }
+        );
+        playMergeWaves(waves, waveIndex + 1, workingBoard);
+      }, SETTLE_BEAT_MS);
     }, waveMs);
   }
 
@@ -236,21 +270,18 @@
     });
   }
 
-  // Shrinks a die to nothing on arrival rather than fading it — no
-  // opacity change at all, so "being absorbed" reads as one clear
-  // visual language (shrinking) instead of two competing ones (shrink
-  // + fade) layered on top of each other.
+  // A consumed die never shrinks or fades — it slides at constant size
+  // and lands stacked exactly on its survivor (z-index by hop keeps
+  // farther dice on top), the way a physical die sliding across a
+  // table would. It stays there, fully solid, through the settle beat
+  // in playMergeWaves; only once that beat ends does the wave's
+  // re-render clear the now-hidden stack and pop the survivor — so
+  // nothing here ever needs to fight over `transform` with a landing
+  // animation, because arriving dice were never given one to begin
+  // with (commitPlacement already skips it for cells wave 0 consumes).
   function flyDieAlongPath(dieEl, path, hopMs, hop) {
     const segments = path.length - 1;
     if (segments <= 0) return;
-
-    // This die may already be mid-flight from a CSS keyframe (e.g. it
-    // was just placed and is still playing its drop-in pop) — an
-    // active `animation` and this JS-driven `transition` would both
-    // fight over `transform` at once, which is exactly the kind of
-    // overlap that reads as broken. Hand the die over cleanly first.
-    dieEl.style.animation = 'none';
-    dieEl.classList.remove('die--place-pop', 'die--merge-target');
 
     dieEl.style.position = 'relative';
     dieEl.style.zIndex = String(5 + hop);
@@ -266,11 +297,8 @@
       if (!from || !to) return;
       totalDx += to.x - from.x;
       totalDy += to.y - from.y;
-      const isFinal = i === segments;
-      dieEl.style.transition = `transform ${hopMs}ms ${isFinal ? 'cubic-bezier(.4, 0, .2, 1)' : 'linear'}`;
-      dieEl.style.transform = isFinal
-        ? `translate(${totalDx}px, ${totalDy}px) scale(0.15)`
-        : `translate(${totalDx}px, ${totalDy}px)`;
+      dieEl.style.transition = `transform ${hopMs}ms ${i === segments ? 'cubic-bezier(.4, 0, .2, 1)' : 'linear'}`;
+      dieEl.style.transform = `translate(${totalDx}px, ${totalDy}px)`;
       if (i < segments) window.setTimeout(step, hopMs);
     }
     requestAnimationFrame(step);
