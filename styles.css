@@ -198,9 +198,10 @@ body {
 /* Impact scales with the mass the merge actually released (see
    D.resolveClusterMass): render.js sets --merge-impact to that amount,
    so a minimal 3-of-a-kind (releases 1) gives a light bump while a
-   bigger simultaneous cluster — which releases more and can jump
-   several value tiers at once — visibly hits harder. Capped with min()
-   so a rare huge release doesn't blow the die out of its cell. */
+   bigger simultaneous cluster — which releases more mass even though
+   it lands on the same value+1 — visibly hits harder. Capped with
+   min() so a rare huge release doesn't blow the die out of its
+   cell. */
 @keyframes die-merge-pop {
   0% { transform: scale(0.6); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
   45% {
