@@ -112,13 +112,33 @@ body {
   animation: die-place-pop 200ms cubic-bezier(.2, .8, .3, 1.3);
 }
 
-@keyframes die-merge-shrink {
-  from { transform: scale(1); opacity: 1; }
-  to { transform: scale(0.15); opacity: 0; }
+/* Consumed cluster dice fly into the surviving cell: main.js computes
+   the pixel offset to travel per-die and sets it as --merge-dx/dy,
+   then adds this class so the transition below carries it there while
+   shrinking and fading out. */
+.die--merge-converge {
+  transition: transform 220ms cubic-bezier(.4, 0, .2, 1), opacity 220ms ease-in;
+  transform: translate(var(--merge-dx, 0px), var(--merge-dy, 0px)) scale(0.25);
+  opacity: 0;
+  position: relative;
+  z-index: 5;
 }
 
-.die--merge-shrink {
-  animation: die-merge-shrink 220ms ease-in forwards;
+@keyframes die-merge-target-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 142, 247, 0.55); }
+  50% { box-shadow: 0 0 0 10px rgba(79, 142, 247, 0); }
+}
+
+.die--merge-target {
+  animation: die-merge-target-pulse 220ms ease-out;
+}
+
+/* Combine explicitly when a die is both freshly placed and the merge's
+   target, so one rule's shorthand doesn't just clobber the other's. */
+.die--place-pop.die--merge-target {
+  animation-name: die-place-pop, die-merge-target-pulse;
+  animation-duration: 200ms, 220ms;
+  animation-timing-function: cubic-bezier(.2, .8, .3, 1.3), ease-out;
 }
 
 @keyframes die-merge-pop {
@@ -249,14 +269,15 @@ body {
   to { transform: scale(1); opacity: 1; }
 }
 
-@keyframes piece-rotate-pulse {
-  0% { transform: scale(0.82) rotate(-10deg); opacity: 0.7; }
-  55% { transform: scale(1.12) rotate(8deg); opacity: 1; }
-  100% { transform: scale(1) rotate(0deg); opacity: 1; }
-}
-
-.piece--current.piece--rotate-pulse {
-  animation: piece-rotate-pulse 240ms cubic-bezier(.2, .8, .3, 1.2);
+/* rotatePiece() is a pure 90°-clockwise rotation of a grid of uniform
+   square cells, so literally rotating the old piece element by 90deg
+   reproduces it exactly — the old shape spins into the new shape's
+   bounding box, then main.js swaps in the freshly rotated DOM once the
+   transition ends. */
+.piece--rotating {
+  transition: transform 220ms cubic-bezier(.3, .7, .4, 1);
+  transform: rotate(90deg);
+  pointer-events: none;
 }
 
 .toolbar {

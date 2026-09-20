@@ -116,7 +116,14 @@ const DiceMergeState = (() => {
     return { scoreGained, merges };
   }
 
-  function placePiece(state, r, c) {
+  // `selected` (optional, absolute {r, c}) is the cell the player was
+  // actually holding when they dropped the piece. Merge seeds are
+  // checked in order and whichever seed is checked first "wins" a
+  // forming cluster (its position survives, holding the bumped value,
+  // while the rest of the cluster is cleared) — so putting the
+  // selected cell first here means a merge converges on the die the
+  // player was holding, not an arbitrary cell of the piece.
+  function placePiece(state, r, c, selected) {
     if (state.gameOver) return state;
     const piece = state.queue[0];
     if (!canPlaceAt(state, piece, r, c)) return state;
@@ -126,10 +133,15 @@ const DiceMergeState = (() => {
       state.board[rr][cc] = value;
     });
 
-    const { scoreGained, merges } = resolveMerges(
-      state,
-      placedCells.map(({ r: rr, c: cc }) => [rr, cc])
-    );
+    let seedCells = placedCells.map(({ r: rr, c: cc }) => [rr, cc]);
+    if (selected) {
+      seedCells = [
+        [selected.r, selected.c],
+        ...seedCells.filter(([rr, cc]) => !(rr === selected.r && cc === selected.c)),
+      ];
+    }
+
+    const { scoreGained, merges } = resolveMerges(state, seedCells);
     state.score += scoreGained;
     state.lastMerges = merges;
     state.moves += 1;

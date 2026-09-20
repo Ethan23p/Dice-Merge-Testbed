@@ -34,6 +34,7 @@
   const STORAGE_KEY = 'dice-merge-testbed:v2';
   const DRAG_THRESHOLD_PX = 6;
   const MERGE_ANIMATION_MS = 260;
+  const ROTATE_ANIMATION_MS = 220;
 
   function loadSaved() {
     try {
@@ -86,15 +87,18 @@
 
   // Places the current piece and animates the result. A merge-free
   // placement just pops the new die(s) in; a merge instead shows the
-  // piece land in its pre-merge spot with the about-to-be-consumed
-  // cluster shrinking away, then swaps to the true merged state with
-  // the surviving die popping to its new value.
-  function commitPlacement(target) {
+  // piece land in its pre-merge spot, then the consumed cluster
+  // physically flies into the surviving cell (see animateMergeConvergence)
+  // before swapping to the true merged state with the surviving die
+  // popping to its new value. `selected` is the absolute cell the
+  // player was holding — passed through so a forming merge converges
+  // there rather than on an arbitrary cell of the piece.
+  function commitPlacement(target, selected) {
     const piece = state.queue[0];
     const preBoard = state.board.map((row) => row.slice());
     const placedCells = S.shapeCellsAt(piece, target.r, target.c);
 
-    S.placePiece(state, target.r, target.c);
+    S.placePiece(state, target.r, target.c, selected);
     const merges = state.lastMerges;
 
     if (!merges.length) {
@@ -106,17 +110,70 @@
     placedCells.forEach(({ r, c, value }) => {
       justPlacedBoard[r][c] = value;
     });
-    const shrinkCells = merges.flatMap((m) => m.consumed);
+    const targetCells = merges.map((m) => ({ r: m.r, c: m.c }));
 
     R.renderBoard(
       boardEl,
       { config: state.config, board: justPlacedBoard, lastMerges: [] },
-      { placedCells, shrinkCells }
+      { placedCells, targetCells }
     );
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
 
+    animateMergeConvergence(merges);
+
     window.setTimeout(render, MERGE_ANIMATION_MS);
+  }
+
+  // Computes, per consumed die, the pixel offset from its own cell to
+  // the merge's surviving cell, then triggers a CSS transition that
+  // translates + shrinks + fades each one along that path — a literal
+  // fly-together convergence rather than a shrink-in-place.
+  function animateMergeConvergence(merges) {
+    const flyers = [];
+    merges.forEach((m) => {
+      const targetCellEl = boardEl.querySelector(`.cell[data-r="${m.r}"][data-c="${m.c}"]`);
+      if (!targetCellEl) return;
+      const targetRect = targetCellEl.getBoundingClientRect();
+      const tx = targetRect.left + targetRect.width / 2;
+      const ty = targetRect.top + targetRect.height / 2;
+
+      m.consumed.forEach(({ r, c }) => {
+        const dieEl = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"] .die`);
+        if (!dieEl) return;
+        const rect = dieEl.getBoundingClientRect();
+        const dx = tx - (rect.left + rect.width / 2);
+        const dy = ty - (rect.top + rect.height / 2);
+        dieEl.style.setProperty('--merge-dx', `${dx}px`);
+        dieEl.style.setProperty('--merge-dy', `${dy}px`);
+        flyers.push(dieEl);
+      });
+    });
+
+    requestAnimationFrame(() => {
+      flyers.forEach((el) => el.classList.add('die--merge-converge'));
+    });
+  }
+
+  // Spins the current piece a genuine 90° via CSS transform (matching
+  // rotatePiece's own 90°-clockwise math exactly, since it's a rigid
+  // rotation of a grid of uniform square cells), then swaps in the
+  // freshly rotated piece once the spin finishes.
+  function rotateCurrentPiece() {
+    const pieceEl = currentPieceEl.querySelector('.piece');
+    if (!pieceEl || pieceEl.classList.contains('piece--rotating')) return;
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      S.rotateQueueHead(state);
+      R.renderQueue(currentPieceEl, nextPieceEl, state);
+    };
+
+    pieceEl.classList.add('piece--rotating');
+    pieceEl.addEventListener('transitionend', finish, { once: true });
+    window.setTimeout(finish, ROTATE_ANIMATION_MS + 80);
   }
 
   // --- Drag / tap controller -------------------------------------------
@@ -209,20 +266,16 @@
 
     if (!dragging) {
       // A tap: rotate the piece in place instead of placing it. The
-      // pulse animation plays even when the shape is symmetric (a
-      // single die) so the tap always reads as having registered.
-      if (commit) {
-        S.rotateQueueHead(state);
-        R.renderQueue(currentPieceEl, nextPieceEl, state);
-        const freshPiece = currentPieceEl.querySelector('.piece');
-        if (freshPiece) freshPiece.classList.add('piece--rotate-pulse');
-      }
+      // spin plays even when the shape is symmetric (a single die) so
+      // the tap always reads as having registered.
+      if (commit) rotateCurrentPiece();
       drag = null;
       return;
     }
 
     if (commit && target && S.canPlaceAt(state, state.queue[0], target.r, target.c)) {
-      commitPlacement(target);
+      const selected = { r: target.r + drag.grabDr, c: target.c + drag.grabDc };
+      commitPlacement(target, selected);
       drag = null;
       return;
     }
