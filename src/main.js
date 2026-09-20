@@ -109,13 +109,14 @@
   }
 
   // Places the current piece and animates the result. A merge-free
-  // placement just pops the new die(s) in; a merge instead shows the
-  // piece land in its pre-merge spot, then the consumed cluster
-  // physically flies into the surviving cell (see animateMergeConvergence)
-  // before swapping to the true merged state with the surviving die
-  // popping to its new value. `selected` is the absolute cell the
-  // player was holding — passed through so a forming merge converges
-  // there rather than on an arbitrary cell of the piece.
+  // placement just pops the new die(s) in. A merge instead plays out
+  // wave by wave (see S.resolveMerges): each wave's consumed dice fly
+  // to their survivor along their own real lateral connectivity, and
+  // the next wave only starts once this one has visually resolved, so
+  // a cascade never appears to begin before the merge that caused it
+  // has finished. `selected` is the absolute cell the player was
+  // holding — passed through so a forming merge converges there rather
+  // than on an arbitrary cell of the piece.
   function commitPlacement(target, selected) {
     const piece = state.queue[0];
     const preBoard = state.board.map((row) => row.slice());
@@ -129,91 +130,185 @@
       return;
     }
 
-    const justPlacedBoard = preBoard.map((row) => row.slice());
+    const workingBoard = preBoard.map((row) => row.slice());
     placedCells.forEach(({ r, c, value }) => {
-      justPlacedBoard[r][c] = value;
+      workingBoard[r][c] = value;
     });
-    const targetCells = merges.map((m) => ({ r: m.r, c: m.c }));
+
+    const waves = [];
+    merges.forEach((m) => {
+      (waves[m.wave] || (waves[m.wave] = [])).push(m);
+    });
 
     R.renderBoard(
       boardEl,
-      { config: state.config, board: justPlacedBoard, lastMerges: [] },
-      { placedCells, targetCells }
+      { config: state.config, board: workingBoard, lastMerges: [] },
+      { placedCells, targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
     );
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
 
-    // The biggest resulting die drives how long the settle takes —
-    // more mass landing takes longer to finish converging, the same
-    // sqrt-of-mass scaling as everything else derived from D.
-    const maxMass = Math.max(...merges.map((m) => D.massForValue(m.value)));
-    const settleMs = Math.min(MAX_SETTLE_MS, D.scaleWithMass(MERGE_ANIMATION_MS, maxMass));
-
-    animateMergeConvergence(merges);
-
-    window.setTimeout(render, settleMs);
+    playMergeWaves(waves, 0, workingBoard);
   }
 
-  // Computes, per consumed die, the pixel offset from its own cell to
-  // the merge's surviving cell, then triggers a CSS transition that
-  // translates + shrinks + fades each one along that path — a literal
-  // fly-together convergence rather than a shrink-in-place. Each
-  // merge's flight duration scales with the mass its own result
-  // carries, so a bigger collapse visibly takes a beat longer.
-  function animateMergeConvergence(merges) {
-    const flyers = [];
-    merges.forEach((m) => {
-      const targetCellEl = boardEl.querySelector(`.cell[data-r="${m.r}"][data-c="${m.c}"]`);
-      if (!targetCellEl) return;
-      const targetRect = targetCellEl.getBoundingClientRect();
-      const tx = targetRect.left + targetRect.width / 2;
-      const ty = targetRect.top + targetRect.height / 2;
-      const convergeMs = Math.min(MAX_CONVERGE_MS, D.scaleWithMass(220, D.massForValue(m.value)));
+  // Plays one wave's convergence, waits for it to visually resolve,
+  // then renders the intermediate board that wave produced before
+  // recursing into the next wave — or, once every wave has played,
+  // renders the true final state. (Waves are synchronized as whole
+  // batches, not per independent cascade chain: if a single placement
+  // starts two unrelated clusters that both happen to cascade, the
+  // faster one waits for the slower one in its wave before its own
+  // cascade starts. A rare case, and still correct — just not maximally
+  // parallel.)
+  function playMergeWaves(waves, waveIndex, workingBoard) {
+    const waveMerges = waves[waveIndex];
+    if (!waveMerges) {
+      render();
+      return;
+    }
 
-      m.consumed.forEach(({ r, c }) => {
-        const dieEl = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"] .die`);
-        if (!dieEl) return;
-        const rect = dieEl.getBoundingClientRect();
-        const dx = tx - (rect.left + rect.width / 2);
-        const dy = ty - (rect.top + rect.height / 2);
-        dieEl.style.setProperty('--merge-dx', `${dx}px`);
-        dieEl.style.setProperty('--merge-dy', `${dy}px`);
-        dieEl.style.transitionDuration = `${convergeMs}ms`;
-        flyers.push(dieEl);
+    const maxMass = Math.max(...waveMerges.map((m) => D.massForValue(m.value)));
+    const waveMs = Math.min(MAX_SETTLE_MS, D.scaleWithMass(MERGE_ANIMATION_MS, maxMass));
+
+    animateMergeConvergence(waveMerges);
+
+    window.setTimeout(() => {
+      const nextWave = waves[waveIndex + 1];
+      if (!nextWave) {
+        render();
+        return;
+      }
+      waveMerges.forEach((m) => {
+        m.consumed.forEach(({ r, c }) => {
+          workingBoard[r][c] = 0;
+        });
+        workingBoard[m.r][m.c] = m.value;
+      });
+      R.renderBoard(
+        boardEl,
+        { config: state.config, board: workingBoard, lastMerges: waveMerges },
+        { targetCells: nextWave.map((m) => ({ r: m.r, c: m.c })) }
+      );
+      playMergeWaves(waves, waveIndex + 1, workingBoard);
+    }, waveMs);
+  }
+
+  function cellCenter(r, c) {
+    const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+  }
+
+  // Flies each consumed die to its survivor along the exact lateral
+  // path that connected it to the cluster (resolveMerges' `path`) —
+  // never a diagonal cut through cells it was never linked to. A die
+  // farther from the survivor (bigger `hop`) renders above nearer
+  // ones, so it visibly slides over them as the cluster gathers rather
+  // than passing beneath. Only the final hop shrinks and fades away;
+  // every earlier hop is a plain, full-size slide from cell to cell.
+  function animateMergeConvergence(merges) {
+    merges.forEach((m) => {
+      const convergeMs = Math.min(MAX_CONVERGE_MS, D.scaleWithMass(220, D.massForValue(m.value)));
+      m.consumed.forEach(({ path, hop }) => {
+        const start = path[0];
+        const dieEl = boardEl.querySelector(`.cell[data-r="${start.r}"][data-c="${start.c}"] .die`);
+        if (dieEl) flyDieAlongPath(dieEl, path, convergeMs, hop);
       });
     });
-
-    requestAnimationFrame(() => {
-      flyers.forEach((el) => el.classList.add('die--merge-converge'));
-    });
   }
 
-  // Spins the current piece a genuine 90° via CSS transform (matching
-  // rotatePiece's own 90°-clockwise math exactly, since it's a rigid
-  // rotation of a grid of uniform square cells), then swaps in the
-  // freshly rotated piece once the spin finishes. A heavier piece has
-  // more rotational inertia, so it takes proportionally longer to spin
-  // — the same sqrt-of-mass scaling used everywhere else, set as an
-  // inline transition-duration since it varies per piece.
+  function flyDieAlongPath(dieEl, path, totalMs, hop) {
+    const segments = path.length - 1;
+    if (segments <= 0) return;
+    dieEl.style.position = 'relative';
+    dieEl.style.zIndex = String(5 + hop);
+    const segmentMs = totalMs / segments;
+
+    let totalDx = 0;
+    let totalDy = 0;
+    let i = 0;
+
+    function step() {
+      const from = cellCenter(path[i].r, path[i].c);
+      const to = cellCenter(path[i + 1].r, path[i + 1].c);
+      i += 1;
+      if (!from || !to) return;
+      totalDx += to.x - from.x;
+      totalDy += to.y - from.y;
+      const isFinal = i === segments;
+      dieEl.style.transition = isFinal
+        ? `transform ${segmentMs}ms cubic-bezier(.4, 0, .2, 1), opacity ${segmentMs}ms ease-in`
+        : `transform ${segmentMs}ms linear`;
+      dieEl.style.transform = isFinal
+        ? `translate(${totalDx}px, ${totalDy}px) scale(0.25)`
+        : `translate(${totalDx}px, ${totalDy}px)`;
+      if (isFinal) dieEl.style.opacity = '0';
+      if (i < segments) window.setTimeout(step, segmentMs);
+    }
+    requestAnimationFrame(step);
+  }
+
+  let rotateSettling = false; // true while dice are still sliding into their new grid slots after a rotation
+
+  // Rotates the queued piece 90° clockwise. Individual dice never spin
+  // in place — only their positions move, each die sliding in a
+  // straight line from its old grid slot to its new one (a FLIP
+  // animation: capture each die's on-screen rect before the state
+  // change, apply the new arrangement instantly, then transition each
+  // die back from its old rect to its new one). Spinning the whole
+  // piece as one rigid transform looked wrong once dice carried
+  // asymmetric detail (pips, a beveled edge) — the pips and bevel
+  // would visibly rotate with the piece, then snap back the instant
+  // the freshly-rendered (upright) shape swapped in.
   function rotateCurrentPiece() {
     const pieceEl = currentPieceEl.querySelector('.piece');
-    if (!pieceEl || pieceEl.classList.contains('piece--rotating')) return;
+    if (!pieceEl || rotateSettling) return;
 
-    const mass = D.massForValue(state.queue[0].cells[0].value);
+    const oldPiece = state.queue[0];
+    const rotatedPiece = D.rotatePiece(oldPiece);
+    const mass = D.massForValue(oldPiece.cells[0].value);
     const rotateMs = Math.min(MAX_ROTATE_MS, D.scaleWithMass(ROTATE_ANIMATION_MS, mass));
 
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      S.rotateQueueHead(state);
-      R.renderQueue(currentPieceEl, nextPieceEl, state);
-    };
+    // rotatePiece maps cells 1:1 by array index, so pairing old cell i
+    // with rotated cell i identifies which specific die moved where.
+    const oldRects = oldPiece.cells.map(
+      ({ dr, dc }) => pieceEl.querySelector(`.die[data-dr="${dr}"][data-dc="${dc}"]`)?.getBoundingClientRect()
+    );
 
-    pieceEl.style.transitionDuration = `${rotateMs}ms`;
-    pieceEl.classList.add('piece--rotating');
-    pieceEl.addEventListener('transitionend', finish, { once: true });
-    window.setTimeout(finish, rotateMs + 80);
+    rotateSettling = true;
+    S.rotateQueueHead(state);
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
+
+    const newPieceEl = currentPieceEl.querySelector('.piece');
+    const animatedDies = [];
+    rotatedPiece.cells.forEach(({ dr, dc }, i) => {
+      const oldRect = oldRects[i];
+      const dieEl = newPieceEl.querySelector(`.die[data-dr="${dr}"][data-dc="${dc}"]`);
+      if (!oldRect || !dieEl) return;
+      const newRect = dieEl.getBoundingClientRect();
+      dieEl.style.transition = 'none';
+      dieEl.style.transform = `translate(${oldRect.left - newRect.left}px, ${oldRect.top - newRect.top}px)`;
+      animatedDies.push(dieEl);
+    });
+
+    // Force layout so the "start" transform above actually applies
+    // before it's switched back to 0 below — otherwise the browser
+    // would collapse the two writes and there'd be nothing to animate.
+    void newPieceEl.offsetWidth;
+
+    animatedDies.forEach((dieEl) => {
+      dieEl.style.transition = `transform ${rotateMs}ms cubic-bezier(.3, .7, .4, 1)`;
+      dieEl.style.transform = 'translate(0, 0)';
+    });
+
+    window.setTimeout(() => {
+      animatedDies.forEach((dieEl) => {
+        dieEl.style.transition = '';
+        dieEl.style.transform = '';
+      });
+      rotateSettling = false;
+    }, rotateMs + 40);
   }
 
   // --- Drag / tap controller -------------------------------------------
@@ -351,7 +446,7 @@
   }
 
   function onPointerDown(e) {
-    if (state.gameOver || drag || dragLocked) return;
+    if (state.gameOver || drag || dragLocked || rotateSettling) return;
     const slot = e.target.closest('[data-dr]');
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!slot || !pieceEl) return;

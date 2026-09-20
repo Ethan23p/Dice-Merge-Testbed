@@ -131,18 +131,6 @@ body {
   animation: die-drop-in 320ms cubic-bezier(.3, .6, .25, 1);
 }
 
-/* Consumed cluster dice fly into the surviving cell: main.js computes
-   the pixel offset to travel per-die and sets it as --merge-dx/dy,
-   then adds this class so the transition below carries it there while
-   shrinking and fading out. */
-.die--merge-converge {
-  transition: transform 220ms cubic-bezier(.4, 0, .2, 1), opacity 220ms ease-in;
-  transform: translate(var(--merge-dx, 0px), var(--merge-dy, 0px)) scale(0.25);
-  opacity: 0;
-  position: relative;
-  z-index: 5;
-}
-
 @keyframes die-merge-target-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(79, 142, 247, 0.55); }
   50% { box-shadow: 0 0 0 10px rgba(79, 142, 247, 0); }
@@ -296,17 +284,6 @@ body {
 @keyframes piece-pop {
   from { transform: scale(0.85); opacity: 0.6; }
   to { transform: scale(1); opacity: 1; }
-}
-
-/* rotatePiece() is a pure 90°-clockwise rotation of a grid of uniform
-   square cells, so literally rotating the old piece element by 90deg
-   reproduces it exactly — the old shape spins into the new shape's
-   bounding box, then main.js swaps in the freshly rotated DOM once the
-   transition ends. */
-.piece--rotating {
-  transition: transform 220ms cubic-bezier(.3, .7, .4, 1);
-  transform: rotate(90deg);
-  pointer-events: none;
 }
 
 .toolbar {

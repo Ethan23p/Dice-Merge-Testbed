@@ -8,7 +8,10 @@
  *     score: number,
  *     moves: number,
  *     gameOver: boolean,
- *     lastMerges: { r, c, value }[]      // for the renderer/animations to react to
+ *     lastMerges: {                      // for the renderer/animations to react to
+ *       r, c, value, massReleased, wave,
+ *       consumed: { r, c, hop, path: {r,c}[] }[],
+ *     }[]
  *     rng: () => number
  *   }
  * A Piece is { cells: [{ dr, dc, value }, ...] }, offsets relative to
@@ -67,21 +70,32 @@ const DiceMergeState = (() => {
     return false;
   }
 
-  // Flood-fills the orthogonally-connected same-value region containing (r, c).
+  // Flood-fills the orthogonally-connected same-value region containing
+  // (r, c) via BFS — not just to find the set of cells, but to record
+  // each one's true shortest lateral hop-distance from the root and
+  // the specific neighbor it was reached through. The renderer uses
+  // that parent chain later to fly a consumed die back to the survivor
+  // hop by hop along real lateral connectivity, rather than cutting a
+  // straight (possibly diagonal) line through cells it was never
+  // actually linked to.
   function floodCluster(state, r, c) {
     const value = state.board[r][c];
-    const visited = new Set();
-    const cluster = [];
-    const stack = [[r, c]];
-    while (stack.length) {
-      const [cr, cc] = stack.pop();
-      const key = `${cr},${cc}`;
-      if (visited.has(key)) continue;
-      if (!inBounds(state, cr, cc)) continue;
-      if (state.board[cr][cc] !== value) continue;
-      visited.add(key);
-      cluster.push([cr, cc]);
-      for (const [dr, dc] of D.DIRECTIONS) stack.push([cr + dr, cc + dc]);
+    const visited = new Set([`${r},${c}`]);
+    const cluster = [{ r, c, hop: 0, parent: null }];
+    const queue = [{ r, c, hop: 0 }];
+    while (queue.length) {
+      const { r: cr, c: cc, hop } = queue.shift();
+      for (const [dr, dc] of D.DIRECTIONS) {
+        const nr = cr + dr;
+        const nc = cc + dc;
+        const key = `${nr},${nc}`;
+        if (visited.has(key)) continue;
+        if (!inBounds(state, nr, nc)) continue;
+        if (state.board[nr][nc] !== value) continue;
+        visited.add(key);
+        cluster.push({ r: nr, c: nc, hop: hop + 1, parent: { r: cr, c: cc } });
+        queue.push({ r: nr, c: nc, hop: hop + 1 });
+      }
     }
     return cluster;
   }
@@ -93,28 +107,53 @@ const DiceMergeState = (() => {
   // go, since it's carrying more mass into the collapse. Re-checks that
   // cell afterward so a merge can chain into a bigger neighboring
   // cluster.
+  //
+  // Each merge is tagged with a `wave`: 0 for a merge triggered
+  // directly by the placement (independent of any other merge from
+  // this same placement), N for a merge only possible because a wave
+  // (N-1) merge produced the die it consumes. The renderer uses this
+  // to animate waves in causal order — merges within a wave are
+  // independent and can play together, but a later wave has to wait
+  // for the wave that fed it to visually resolve first.
   function resolveMerges(state, seedCells) {
     let scoreGained = 0;
     const merges = [];
-    const worklist = [...seedCells];
+    const worklist = seedCells.map((cell) => ({ cell, wave: 0 }));
     while (worklist.length) {
-      const [r, c] = worklist.shift();
+      const { cell, wave } = worklist.shift();
+      const [r, c] = cell;
       if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
       const cluster = floodCluster(state, r, c);
       if (cluster.length >= D.MERGE_MIN_CLUSTER) {
         const value = state.board[r][c];
         const { newValue, massReleased, score } = D.resolveClusterMass(value, cluster.length);
+
+        // Each consumed die's `path` is the lateral hop-by-hop chain
+        // back to the survivor (r, c) — exactly the connectivity that
+        // made it part of this cluster.
+        const byKey = new Map(cluster.map((cell) => [`${cell.r},${cell.c}`, cell]));
+        const pathToRoot = (cell) => {
+          const path = [{ r: cell.r, c: cell.c }];
+          let cur = cell;
+          while (cur.parent) {
+            cur = byKey.get(`${cur.parent.r},${cur.parent.c}`);
+            path.push({ r: cur.r, c: cur.c });
+          }
+          return path;
+        };
+
         // Cells other than the trigger cell disappear into it — recorded
-        // so the renderer can animate them shrinking away before the
-        // board settles into its merged state.
+        // so the renderer can animate them flying to the survivor along
+        // their own lateral path before the board settles into its
+        // merged state.
         const consumed = cluster
-          .filter(([cr, cc]) => !(cr === r && cc === c))
-          .map(([cr, cc]) => ({ r: cr, c: cc }));
-        for (const [cr, cc] of cluster) state.board[cr][cc] = 0;
+          .filter((cell) => !(cell.r === r && cell.c === c))
+          .map((cell) => ({ r: cell.r, c: cell.c, hop: cell.hop, path: pathToRoot(cell) }));
+        for (const cell of cluster) state.board[cell.r][cell.c] = 0;
         state.board[r][c] = newValue;
         scoreGained += score;
-        merges.push({ r, c, value: newValue, consumed, massReleased });
-        worklist.push([r, c]);
+        merges.push({ r, c, value: newValue, consumed, massReleased, wave });
+        worklist.push({ cell: [r, c], wave: wave + 1 });
       }
     }
     return { scoreGained, merges };
