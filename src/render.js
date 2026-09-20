@@ -82,6 +82,11 @@ const DiceMergeRender = (() => {
     const justMerged = new Set(state.lastMerges.map((m) => `${m.r},${m.c}`));
     const justPlaced = new Set((options.placedCells || []).map((c) => `${c.r},${c.c}`));
     const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
+    // Cluster size (survivor + consumed) drives how hard the merge-pop
+    // impact hits — a bigger merge should visibly land with more mass.
+    const impactByKey = new Map(
+      state.lastMerges.map((m) => [`${m.r},${m.c}`, m.consumed.length + 1])
+    );
 
     state.board.forEach((row, r) => {
       row.forEach((value, c) => {
@@ -94,8 +99,12 @@ const DiceMergeRender = (() => {
         if (value) {
           const key = `${r},${c}`;
           const die = buildDieNode(value, 'board');
-          if (justMerged.has(key)) die.classList.add('die--merge-pop');
-          else if (justPlaced.has(key)) die.classList.add('die--place-pop');
+          if (justMerged.has(key)) {
+            die.classList.add('die--merge-pop');
+            die.style.setProperty('--merge-impact', String(impactByKey.get(key)));
+          } else if (justPlaced.has(key)) {
+            die.classList.add('die--place-pop');
+          }
           if (targets.has(key)) die.classList.add('die--merge-target');
           cell.appendChild(die);
         }

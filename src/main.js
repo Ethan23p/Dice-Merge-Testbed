@@ -16,6 +16,7 @@
   const D = DiceMergeData;
   const S = DiceMergeState;
   const R = DiceMergeRender;
+  const P = DiceMergePhysics;
 
   const boardEl = document.getElementById('board');
   const currentPieceEl = document.getElementById('current-piece');
@@ -35,6 +36,18 @@
   const DRAG_THRESHOLD_PX = 6;
   const MERGE_ANIMATION_MS = 260;
   const ROTATE_ANIMATION_MS = 220;
+
+  // Drag-follow spring: near-critically-damped, so the held piece lags
+  // the pointer just enough to read as having weight without feeling
+  // laggy to control. Snapback is deliberately underdamped so a
+  // rejected drop overshoots and settles like it bounced off a wall,
+  // carrying over whatever velocity the piece had when released.
+  const DRAG_SPRING_STIFFNESS = 260;
+  const DRAG_SPRING_DAMPING = 30;
+  const SNAPBACK_STIFFNESS = 170;
+  const SNAPBACK_DAMPING = 11;
+  const MAX_TILT_DEG = 12;
+  const TILT_PER_VELOCITY = 0.018; // deg of "lean" per px/s of lateral speed
 
   function loadSaved() {
     try {
@@ -178,7 +191,91 @@
 
   // --- Drag / tap controller -------------------------------------------
 
-  let drag = null; // { pointerId, pieceEl, grabDr, grabDc, startX, startY, dragging, target }
+  let drag = null; // { pointerId, pieceEl, grabDr, grabDc, startX, startY, dragging, target, ...physics }
+  let dragLocked = false; // true while a released piece is still springing back into its slot
+
+  // Runs every frame while a piece is held: the piece's on-screen
+  // position chases the pointer's offset (drag.targetX/Y) through a
+  // damped spring instead of matching it 1:1, and a lateral "lean"
+  // proportional to the spring's own velocity sells the piece as
+  // something with mass being carried, not a cursor decal.
+  function startDragFollow(d) {
+    d.physicsActive = true;
+    let lastT = performance.now();
+    function frame(now) {
+      if (!d.physicsActive) return;
+      const dt = Math.min((now - lastT) / 1000, 1 / 30);
+      lastT = now;
+      const stepX = P.stepSpring(d.visX, d.visVelX, d.targetX, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt);
+      const stepY = P.stepSpring(d.visY, d.visVelY, d.targetY, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt);
+      d.visX = stepX.value;
+      d.visVelX = stepX.velocity;
+      d.visY = stepY.value;
+      d.visVelY = stepY.velocity;
+      const tilt = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, d.visVelX * TILT_PER_VELOCITY));
+      d.pieceEl.style.transform = `translate(${d.visX}px, ${d.visY}px) rotate(${tilt.toFixed(2)}deg)`;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // Springs a rejected/cancelled piece from wherever it was released
+  // back to (0, 0) in its slot, carrying its current velocity so the
+  // motion reads as continuous rather than restarting from rest.
+  function springBack(pieceEl, startX, startY, velX, velY) {
+    dragLocked = true;
+    const pos = { x: startX, y: startY };
+    let pending = 2;
+    const applyTransform = () => {
+      pieceEl.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+    };
+    const onDone = () => {
+      pending -= 1;
+      if (pending > 0) return;
+      pieceEl.classList.remove('piece--dragging');
+      pieceEl.style.transform = '';
+      dragLocked = false;
+    };
+    P.runSpring({
+      from: startX,
+      velocity: velX,
+      target: 0,
+      stiffness: SNAPBACK_STIFFNESS,
+      damping: SNAPBACK_DAMPING,
+      onStep: (v) => {
+        pos.x = v;
+        applyTransform();
+      },
+      onSettle: onDone,
+    });
+    P.runSpring({
+      from: startY,
+      velocity: velY,
+      target: 0,
+      stiffness: SNAPBACK_STIFFNESS,
+      damping: SNAPBACK_DAMPING,
+      onStep: (v) => {
+        pos.y = v;
+        applyTransform();
+      },
+      onSettle: onDone,
+    });
+  }
+
+  // Shakes the board cells a rejected placement would have occupied —
+  // the piece bounced off something solid there. Reuses the (previously
+  // unused) .cell--shake keyframe, restarting it via a reflow in the
+  // rare case the same cell gets shaken again before it finishes.
+  function shakeRejectedCells(cells) {
+    cells.forEach(({ r, c }) => {
+      const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+      if (!el) return;
+      el.classList.remove('cell--shake');
+      void el.offsetWidth;
+      el.classList.add('cell--shake');
+      el.addEventListener('animationend', () => el.classList.remove('cell--shake'), { once: true });
+    });
+  }
 
   function clearPreview() {
     boardEl.querySelectorAll('.cell.preview-valid, .cell.preview-invalid').forEach((el) => {
@@ -220,7 +317,7 @@
   }
 
   function onPointerDown(e) {
-    if (state.gameOver || drag) return;
+    if (state.gameOver || drag || dragLocked) return;
     const slot = e.target.closest('[data-dr]');
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!slot || !pieceEl) return;
@@ -234,6 +331,13 @@
       startY: e.clientY,
       dragging: false,
       target: null,
+      targetX: 0,
+      targetY: 0,
+      visX: 0,
+      visY: 0,
+      visVelX: 0,
+      visVelY: 0,
+      physicsActive: false,
     };
     pieceEl.setPointerCapture(e.pointerId);
     pieceEl.addEventListener('pointermove', onPointerMove);
@@ -245,14 +349,16 @@
     if (!drag || e.pointerId !== drag.pointerId) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
+    drag.targetX = dx;
+    drag.targetY = dy;
 
     if (!drag.dragging) {
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
       drag.dragging = true;
       drag.pieceEl.classList.add('piece--dragging');
+      startDragFollow(drag);
     }
 
-    drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
     updateDragPreview(e.clientX, e.clientY);
   }
 
@@ -273,6 +379,8 @@
       return;
     }
 
+    drag.physicsActive = false;
+
     if (commit && target && S.canPlaceAt(state, state.queue[0], target.r, target.c)) {
       const selected = { r: target.r + drag.grabDr, c: target.c + drag.grabDc };
       commitPlacement(target, selected);
@@ -280,14 +388,12 @@
       return;
     }
 
-    // Invalid drop (or cancelled): snap the piece back to its slot.
-    pieceEl.classList.add('piece--snapback');
-    pieceEl.style.transform = 'translate(0, 0)';
-    pieceEl.addEventListener(
-      'transitionend',
-      () => pieceEl.classList.remove('piece--dragging', 'piece--snapback'),
-      { once: true }
-    );
+    // Invalid drop (or cancelled): the piece springs back to its slot
+    // carrying whatever velocity it was released with — a hard flick
+    // overshoots and settles instead of teleporting home — and any
+    // cells it was hovering over shake, as if it bounced off them.
+    if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c));
+    springBack(pieceEl, drag.visX, drag.visY, drag.visVelX, drag.visVelY);
     drag = null;
   }
 
