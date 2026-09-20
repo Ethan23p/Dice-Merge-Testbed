@@ -9,7 +9,9 @@
   const R = DiceMergeRender;
 
   const boardEl = document.getElementById('board');
-  const queueEl = document.getElementById('queue');
+  const currentPieceEl = document.getElementById('current-piece');
+  const nextPieceEl = document.getElementById('next-piece');
+  const rotateBtn = document.getElementById('rotate-btn');
   const scoreEl = document.getElementById('score');
   const bestEl = document.getElementById('best-score');
   const newGameBtn = document.getElementById('new-game-btn');
@@ -21,7 +23,7 @@
   const gameOverScoreEl = document.getElementById('game-over-score');
   const playAgainBtn = document.getElementById('play-again-btn');
 
-  const STORAGE_KEY = 'dice-merge-testbed:v1';
+  const STORAGE_KEY = 'dice-merge-testbed:v2';
 
   function loadSaved() {
     try {
@@ -48,9 +50,39 @@
   let bestScore = saved.bestScore || 0;
   let state = S.createState(config);
 
+  function clearPreview() {
+    boardEl.querySelectorAll('.cell.preview-valid, .cell.preview-invalid').forEach((el) => {
+      el.classList.remove('preview-valid', 'preview-invalid');
+    });
+  }
+
+  function showPreview(r, c) {
+    clearPreview();
+    const piece = state.queue[0];
+    const valid = S.canPlaceAt(state, piece, r, c);
+    S.shapeCellsAt(piece, r, c).forEach(({ r: rr, c: cc }) => {
+      if (!S.inBounds(state, rr, cc)) return;
+      const el = boardEl.querySelector(`.cell[data-r="${rr}"][data-c="${cc}"]`);
+      if (el) el.classList.add(valid ? 'preview-valid' : 'preview-invalid');
+    });
+  }
+
+  function shakeCell(r, c) {
+    const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    if (!el) return;
+    el.classList.remove('cell--shake');
+    // eslint-disable-next-line no-unused-expressions
+    void el.offsetWidth; // restart the animation
+    el.classList.add('cell--shake');
+  }
+
   function render() {
-    R.renderBoard(boardEl, state, handleCellClick);
-    R.renderQueue(queueEl, state);
+    R.renderBoard(boardEl, state, {
+      onCellClick: handleCellClick,
+      onCellEnter: showPreview,
+      onCellLeave: clearPreview,
+    });
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
     bestEl.textContent = `Best ${bestScore}`;
 
@@ -68,7 +100,11 @@
   }
 
   function handleCellClick(r, c) {
-    S.placeDie(state, r, c);
+    if (!S.canPlaceAt(state, state.queue[0], r, c)) {
+      shakeCell(r, c);
+      return;
+    }
+    S.placePiece(state, r, c);
     render();
   }
 
@@ -79,6 +115,11 @@
 
   newGameBtn.addEventListener('click', newGame);
   playAgainBtn.addEventListener('click', newGame);
+
+  rotateBtn.addEventListener('click', () => {
+    S.rotateQueueHead(state);
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
+  });
 
   settingsBtn.addEventListener('click', () => settingsDialog.showModal());
   closeSettingsBtn.addEventListener('click', () => settingsDialog.close());

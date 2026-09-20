@@ -90,6 +90,26 @@ body {
   background: #161616;
 }
 
+.cell.preview-valid {
+  background: rgba(79, 142, 247, 0.28);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.cell.preview-invalid {
+  background: rgba(232, 83, 79, 0.22);
+  box-shadow: inset 0 0 0 2px #e8534f;
+}
+
+@keyframes cell-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}
+
+.cell--shake {
+  animation: cell-shake 220ms ease;
+}
+
 .die {
   width: 86%;
   height: 86%;
@@ -127,25 +147,69 @@ body {
   color: rgba(0, 0, 0, 0.75);
 }
 
-.queue {
+.queue-panel {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
 }
 
-.queue .die {
-  width: 64px;
-  height: 64px;
+.queue-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.piece {
+  display: grid;
+  gap: 4px;
+  grid-template-columns: repeat(var(--piece-cols), 1fr);
+  grid-template-rows: repeat(var(--piece-rows), 1fr);
+}
+
+.piece--current .die,
+.piece--current .piece-spacer {
+  width: 52px;
+  height: 52px;
+}
+
+.piece--next .die,
+.piece--next .piece-spacer {
+  width: 38px;
+  height: 38px;
+}
+
+.piece--next {
+  opacity: 0.75;
 }
 
 .die--current {
   box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.5);
 }
 
-.die--next {
-  opacity: 0.85;
-  transform: scale(0.94);
+.rotate-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--grid-line);
+  background: transparent;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.rotate-btn:hover {
+  background: #161616;
 }
 
 .toolbar {

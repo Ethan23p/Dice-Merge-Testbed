@@ -15,7 +15,18 @@
 
     <div class="board" id="board" role="grid" aria-label="Dice board"></div>
 
-    <div class="queue" id="queue" aria-label="Upcoming dice"></div>
+    <div class="queue-panel" aria-label="Upcoming pieces">
+      <span class="queue-label">Up next</span>
+      <div class="queue-row">
+        <div class="piece-slot" id="current-piece"></div>
+        <button class="rotate-btn" id="rotate-btn" type="button" aria-label="Rotate piece">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+            <path fill="currentColor" d="M12 5V2L8 6l4 4V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="piece-slot piece-slot--next" id="next-piece"></div>
+    </div>
 
     <footer class="toolbar">
       <button class="icon-button" id="new-game-btn" type="button">
