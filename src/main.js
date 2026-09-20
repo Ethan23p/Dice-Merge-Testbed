@@ -36,12 +36,22 @@
   const DRAG_THRESHOLD_PX = 6;
   const MERGE_ANIMATION_MS = 260;
   const ROTATE_ANIMATION_MS = 220;
+  // Every *_MS above is tuned for a mass-1 (value-1) die and scaled up
+  // from there via D.scaleWithMass — these caps just stop an extreme
+  // late-game value from stretching an animation absurdly long.
+  const MAX_ROTATE_MS = 500;
+  const MAX_CONVERGE_MS = 500;
+  const MAX_SETTLE_MS = 900;
 
   // Drag-follow spring: near-critically-damped, so the held piece lags
   // the pointer just enough to read as having weight without feeling
   // laggy to control. Snapback is deliberately underdamped so a
   // rejected drop overshoots and settles like it bounced off a wall,
-  // carrying over whatever velocity the piece had when released.
+  // carrying over whatever velocity the piece had when released. Both
+  // are real spring constants now, not per-value tuning — P.stepSpring
+  // divides by the dragged piece's actual mass (F=ma), so the SAME
+  // stiffness/damping here already makes heavier dice feel heavier
+  // without any extra per-tier number.
   const DRAG_SPRING_STIFFNESS = 260;
   const DRAG_SPRING_DAMPING = 30;
   const SNAPBACK_STIFFNESS = 170;
@@ -133,15 +143,23 @@
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
 
+    // The biggest resulting die drives how long the settle takes —
+    // more mass landing takes longer to finish converging, the same
+    // sqrt-of-mass scaling as everything else derived from D.
+    const maxMass = Math.max(...merges.map((m) => D.massForValue(m.value)));
+    const settleMs = Math.min(MAX_SETTLE_MS, D.scaleWithMass(MERGE_ANIMATION_MS, maxMass));
+
     animateMergeConvergence(merges);
 
-    window.setTimeout(render, MERGE_ANIMATION_MS);
+    window.setTimeout(render, settleMs);
   }
 
   // Computes, per consumed die, the pixel offset from its own cell to
   // the merge's surviving cell, then triggers a CSS transition that
   // translates + shrinks + fades each one along that path — a literal
-  // fly-together convergence rather than a shrink-in-place.
+  // fly-together convergence rather than a shrink-in-place. Each
+  // merge's flight duration scales with the mass its own result
+  // carries, so a bigger collapse visibly takes a beat longer.
   function animateMergeConvergence(merges) {
     const flyers = [];
     merges.forEach((m) => {
@@ -150,6 +168,7 @@
       const targetRect = targetCellEl.getBoundingClientRect();
       const tx = targetRect.left + targetRect.width / 2;
       const ty = targetRect.top + targetRect.height / 2;
+      const convergeMs = Math.min(MAX_CONVERGE_MS, D.scaleWithMass(220, D.massForValue(m.value)));
 
       m.consumed.forEach(({ r, c }) => {
         const dieEl = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"] .die`);
@@ -159,6 +178,7 @@
         const dy = ty - (rect.top + rect.height / 2);
         dieEl.style.setProperty('--merge-dx', `${dx}px`);
         dieEl.style.setProperty('--merge-dy', `${dy}px`);
+        dieEl.style.transitionDuration = `${convergeMs}ms`;
         flyers.push(dieEl);
       });
     });
@@ -171,10 +191,16 @@
   // Spins the current piece a genuine 90° via CSS transform (matching
   // rotatePiece's own 90°-clockwise math exactly, since it's a rigid
   // rotation of a grid of uniform square cells), then swaps in the
-  // freshly rotated piece once the spin finishes.
+  // freshly rotated piece once the spin finishes. A heavier piece has
+  // more rotational inertia, so it takes proportionally longer to spin
+  // — the same sqrt-of-mass scaling used everywhere else, set as an
+  // inline transition-duration since it varies per piece.
   function rotateCurrentPiece() {
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!pieceEl || pieceEl.classList.contains('piece--rotating')) return;
+
+    const mass = D.massForValue(state.queue[0].cells[0].value);
+    const rotateMs = Math.min(MAX_ROTATE_MS, D.scaleWithMass(ROTATE_ANIMATION_MS, mass));
 
     let done = false;
     const finish = () => {
@@ -184,9 +210,10 @@
       R.renderQueue(currentPieceEl, nextPieceEl, state);
     };
 
+    pieceEl.style.transitionDuration = `${rotateMs}ms`;
     pieceEl.classList.add('piece--rotating');
     pieceEl.addEventListener('transitionend', finish, { once: true });
-    window.setTimeout(finish, ROTATE_ANIMATION_MS + 80);
+    window.setTimeout(finish, rotateMs + 80);
   }
 
   // --- Drag / tap controller -------------------------------------------
@@ -206,8 +233,8 @@
       if (!d.physicsActive) return;
       const dt = Math.min((now - lastT) / 1000, 1 / 30);
       lastT = now;
-      const stepX = P.stepSpring(d.visX, d.visVelX, d.targetX, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt);
-      const stepY = P.stepSpring(d.visY, d.visVelY, d.targetY, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt);
+      const stepX = P.stepSpring(d.visX, d.visVelX, d.targetX, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt, d.mass);
+      const stepY = P.stepSpring(d.visY, d.visVelY, d.targetY, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt, d.mass);
       d.visX = stepX.value;
       d.visVelX = stepX.velocity;
       d.visY = stepY.value;
@@ -221,8 +248,10 @@
 
   // Springs a rejected/cancelled piece from wherever it was released
   // back to (0, 0) in its slot, carrying its current velocity so the
-  // motion reads as continuous rather than restarting from rest.
-  function springBack(pieceEl, startX, startY, velX, velY) {
+  // motion reads as continuous rather than restarting from rest. Mass
+  // flows through here too (F=ma in P.stepSpring), so a heavier piece
+  // overshoots and settles more slowly on the way back.
+  function springBack(pieceEl, startX, startY, velX, velY, mass) {
     dragLocked = true;
     const pos = { x: startX, y: startY };
     let pending = 2;
@@ -242,6 +271,7 @@
       target: 0,
       stiffness: SNAPBACK_STIFFNESS,
       damping: SNAPBACK_DAMPING,
+      mass,
       onStep: (v) => {
         pos.x = v;
         applyTransform();
@@ -254,6 +284,7 @@
       target: 0,
       stiffness: SNAPBACK_STIFFNESS,
       damping: SNAPBACK_DAMPING,
+      mass,
       onStep: (v) => {
         pos.y = v;
         applyTransform();
@@ -263,13 +294,16 @@
   }
 
   // Shakes the board cells a rejected placement would have occupied —
-  // the piece bounced off something solid there. Reuses the (previously
-  // unused) .cell--shake keyframe, restarting it via a reflow in the
-  // rare case the same cell gets shaken again before it finishes.
-  function shakeRejectedCells(cells) {
+  // the piece bounced off something solid there, harder if it was
+  // carrying more mass. Reuses the (previously unused) .cell--shake
+  // keyframe, restarting it via a reflow in the rare case the same
+  // cell gets shaken again before it finishes.
+  function shakeRejectedCells(cells, mass) {
+    const strength = D.scaleWithMass(1, mass); // sqrt(mass), read by the keyframe
     cells.forEach(({ r, c }) => {
       const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
       if (!el) return;
+      el.style.setProperty('--reject-strength', String(strength));
       el.classList.remove('cell--shake');
       void el.offsetWidth;
       el.classList.add('cell--shake');
@@ -325,6 +359,7 @@
     drag = {
       pointerId: e.pointerId,
       pieceEl,
+      mass: D.massForValue(state.queue[0].cells[0].value),
       grabDr: Number(slot.dataset.dr),
       grabDc: Number(slot.dataset.dc),
       startX: e.clientX,
@@ -392,8 +427,8 @@
     // carrying whatever velocity it was released with — a hard flick
     // overshoots and settles instead of teleporting home — and any
     // cells it was hovering over shake, as if it bounced off them.
-    if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c));
-    springBack(pieceEl, drag.visX, drag.visY, drag.visVelX, drag.visVelY);
+    if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c), drag.mass);
+    springBack(pieceEl, drag.visX, drag.visY, drag.visVelX, drag.visVelY, drag.mass);
     drag = null;
   }
 

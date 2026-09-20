@@ -104,12 +104,26 @@ body {
 
 /* A placed die falls into its cell rather than popping in place: it
    eases in from above (accelerating, like gravity) then squashes flat
-   and rebounds on impact before settling — weight, not a fade-in. */
+   and rebounds on impact before settling — weight, not a fade-in.
+   render.js sets --drop-strength to sqrt(mass) and stretches the
+   animation-duration by the same amount (D.scaleWithMass), so a
+   value-1 die (mass 1, strength 1) reproduces these exact numbers —
+   1.14/0.82/0.95/1.06 — while a heavier die squashes flatter and
+   rebounds harder. Capped with min()/max() so a rare huge mass
+   doesn't flatten the die into nothing. */
 @keyframes die-drop-in {
   0% { transform: translateY(-180%) scale(0.92); opacity: 0; }
   55% { transform: translateY(0) scale(1); opacity: 1; }
-  70% { transform: translateY(0) scaleX(1.14) scaleY(0.82); }
-  85% { transform: translateY(0) scaleX(0.95) scaleY(1.06); }
+  70% {
+    transform: translateY(0)
+      scaleX(min(1.5, calc(1 + 0.14 * var(--drop-strength, 1))))
+      scaleY(max(0.4, calc(1 - 0.18 * var(--drop-strength, 1))));
+  }
+  85% {
+    transform: translateY(0)
+      scaleX(max(0.7, calc(1 - 0.05 * var(--drop-strength, 1))))
+      scaleY(min(1.3, calc(1 + 0.06 * var(--drop-strength, 1))));
+  }
   100% { transform: translateY(0) scale(1); }
 }
 
@@ -165,10 +179,15 @@ body {
   animation: die-merge-pop 360ms cubic-bezier(.25, .9, .3, 1.2);
 }
 
+/* A rejected piece bounced off this cell — harder if it was carrying
+   more mass. main.js sets --reject-strength to sqrt(mass) of the
+   rejected piece (D.scaleWithMass), so a value-1 piece (strength 1)
+   reproduces the original ±4px exactly. Capped so a heavy piece can't
+   shake a cell out of the grid. */
 @keyframes cell-shake {
   0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
+  25% { transform: translateX(max(-10px, calc(-4px * var(--reject-strength, 1)))); }
+  75% { transform: translateX(min(10px, calc(4px * var(--reject-strength, 1)))); }
 }
 
 .cell--shake {

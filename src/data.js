@@ -45,23 +45,6 @@ const DiceMergeData = (() => {
     return PIP_LAYOUTS[value] || null;
   }
 
-  // Relative weights, not percentages — rollSpawnValue normalizes.
-  const SPAWN_TABLE = [
-    { value: 1, weight: 55 },
-    { value: 2, weight: 30 },
-    { value: 3, weight: 15 },
-  ];
-
-  function rollSpawnValue(rng = Math.random) {
-    const total = SPAWN_TABLE.reduce((sum, entry) => sum + entry.weight, 0);
-    let roll = rng() * total;
-    for (const entry of SPAWN_TABLE) {
-      if (roll < entry.weight) return entry.value;
-      roll -= entry.weight;
-    }
-    return SPAWN_TABLE[0].value;
-  }
-
   // Every die value stands for a "mass" that doubles per tier — the one
   // physical law the rest of the merge/score system is derived from,
   // rather than each being its own hand-picked rule:
@@ -96,6 +79,52 @@ const DiceMergeData = (() => {
     const newValue = valueForMass(massBefore);
     const massReleased = massBefore - massForValue(newValue);
     return { newValue, massReleased, score: massReleased * SCORE_PER_MASS };
+  }
+
+  // What spawns is governed by the same mass law, not a separate hand-
+  // picked table: heavier values are exponentially rarer, the way
+  // higher-energy states are in a Boltzmann distribution — one
+  // temperature constant sets how sharply rarity falls off with mass,
+  // rather than a percentage being chosen per value. SPAWN_TEMPERATURE
+  // = 2 reproduces roughly the old hand-tuned 55/30/15 split for
+  // values 1-3, but — because it's a real curve rather than a lookup
+  // table with a hard edge — it also lets a rare 4 or 5 spawn instead
+  // of never happening at all above the old table's top entry.
+  const SPAWN_TEMPERATURE = 2;
+  // Values beyond this have astronomically small weight (e^-64 or
+  // smaller at this temperature) — the cutoff is just where summing
+  // more terms stops changing anything, not an authored ceiling.
+  const SPAWN_VALUE_POOL = 8;
+
+  function spawnWeight(value) {
+    return Math.exp(-massForValue(value) / SPAWN_TEMPERATURE);
+  }
+
+  function rollSpawnValue(rng = Math.random) {
+    const weights = [];
+    let total = 0;
+    for (let value = 1; value <= SPAWN_VALUE_POOL; value++) {
+      const w = spawnWeight(value);
+      weights.push(w);
+      total += w;
+    }
+    let roll = rng() * total;
+    for (let i = 0; i < weights.length; i++) {
+      if (roll < weights[i]) return i + 1;
+      roll -= weights[i];
+    }
+    return 1;
+  }
+
+  // Real materials take longer to settle the more massive they are — a
+  // spring's natural period scales with sqrt(mass/stiffness) — so any
+  // animation whose length or intensity should reflect "how much mass
+  // is involved" scales through this one function instead of each spot
+  // picking its own per-tier multiplier. At mass=1 this is a no-op
+  // (returns `base` unchanged), so the lightest die reproduces exactly
+  // whatever baseline feel `base` was tuned for.
+  function scaleWithMass(base, mass) {
+    return base * Math.sqrt(mass);
   }
 
   // Piece shapes: relative (dr, dc) offsets, normalized so the
@@ -179,13 +208,16 @@ const DiceMergeData = (() => {
     BASE_PALETTE,
     colorForValue,
     pipLayoutForValue,
-    SPAWN_TABLE,
+    SPAWN_TEMPERATURE,
+    SPAWN_VALUE_POOL,
+    spawnWeight,
     rollSpawnValue,
     massForValue,
     valueForMass,
     SCORE_PER_MASS,
     MERGE_MIN_CLUSTER,
     resolveClusterMass,
+    scaleWithMass,
     SHAPE_LIBRARY,
     PIECE_SIZE_WEIGHTS,
     rollPieceSize,

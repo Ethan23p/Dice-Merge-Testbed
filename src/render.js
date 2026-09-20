@@ -6,6 +6,8 @@
  */
 const DiceMergeRender = (() => {
   const D = DiceMergeData;
+  const BASE_DROP_MS = 320;
+  const MAX_DROP_MS = 700;
 
   function buildDieNode(value, variant = 'board') {
     const die = document.createElement('div');
@@ -105,6 +107,15 @@ const DiceMergeRender = (() => {
             die.style.setProperty('--merge-impact', String(impactByKey.get(key)));
           } else if (justPlaced.has(key)) {
             die.classList.add('die--place-pop');
+            // A heavier die falls with more emphasis: --drop-strength
+            // (sqrt of its mass) parameterizes the keyframe's squash,
+            // and the same scaling stretches the fall's duration —
+            // both via D.scaleWithMass, so a value-1 die (mass 1)
+            // reproduces the original tuned feel exactly.
+            const mass = D.massForValue(value);
+            die.style.setProperty('--drop-strength', String(D.scaleWithMass(1, mass)));
+            const dropMs = Math.min(MAX_DROP_MS, D.scaleWithMass(BASE_DROP_MS, mass));
+            die.style.animationDuration = targets.has(key) ? `${dropMs}ms, 220ms` : `${dropMs}ms`;
           }
           if (targets.has(key)) die.classList.add('die--merge-target');
           cell.appendChild(die);
