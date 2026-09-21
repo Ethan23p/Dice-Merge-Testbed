@@ -155,18 +155,25 @@ const DiceMergeData = (() => {
   }
 
   // A piece is { cells: [{ dr, dc, value }, ...] } — a small polyomino
-  // that is ONE object with one value shared by every cell, the way a
-  // real object has one mass rather than each part weighing something
-  // unrelated to the rest of it. Shape (where it sits) and value (what
-  // it's made of) are independent axes, but within one piece the value
-  // is a single fact, not a separate roll per cell.
+  // whose cells are shuffled independently: each rolls its own value
+  // off the same spawn curve as a lone die (rollSpawnValue), rather
+  // than the whole piece sharing one roll. Shape (where it sits) and
+  // value (what each cell is made of) are independent axes.
   function generatePiece(rng = Math.random) {
     const size = rollPieceSize(rng);
     const shapes = SHAPE_LIBRARY[size];
     const shape = shapes[Math.floor(rng() * shapes.length)];
-    const value = rollSpawnValue(rng);
-    const cells = shape.map(([dr, dc]) => ({ dr, dc, value }));
+    const cells = shape.map(([dr, dc]) => ({ dr, dc, value: rollSpawnValue(rng) }));
     return { cells };
+  }
+
+  // A piece's total mass, for physics/animation feel (snapback weight,
+  // rotate duration, reject-shake strength) — the sum of each cell's
+  // own mass, since a piece's cells can each hold a different value
+  // (see generatePiece) and a real multi-part object's mass is the sum
+  // of its parts, not just whichever part you'd ask first.
+  function pieceMass(piece) {
+    return piece.cells.reduce((sum, cell) => sum + massForValue(cell.value), 0);
   }
 
   // Rotates a piece 90° clockwise and re-normalizes so it keeps a
@@ -211,6 +218,7 @@ const DiceMergeData = (() => {
     PIECE_SIZE_WEIGHTS,
     rollPieceSize,
     generatePiece,
+    pieceMass,
     rotatePiece,
     DEFAULT_CONFIG,
     BOARD_SIZE_OPTIONS,

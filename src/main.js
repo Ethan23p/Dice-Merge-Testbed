@@ -1,8 +1,8 @@
 /*
  * Wiring: DOM events <-> state transitions <-> render, plus a pointer-
- * based drag controller for placing pieces. Owns persistence (best
- * score, chosen board size) as the one piece of state that outlives a
- * single game.
+ * based drag controller for placing pieces. Owns persistence — best
+ * score, chosen board size, and the game in progress itself, so a
+ * reload resumes exactly where the player left off.
  *
  * Interaction model: the current piece is dragged from its queue slot
  * onto the board; wherever a die of the piece is released determines
@@ -58,21 +58,15 @@
     return Math.min(MAX_HOP_MS, D.scaleWithMass(BASE_HOP_MS, D.massForValue(value)));
   }
 
-  // Drag-follow spring: near-critically-damped, so the held piece lags
-  // the pointer just enough to read as having weight without feeling
-  // laggy to control. Snapback is deliberately underdamped so a
-  // rejected drop overshoots and settles like it bounced off a wall,
-  // carrying over whatever velocity the piece had when released. Both
-  // are real spring constants now, not per-value tuning — P.stepSpring
-  // divides by the dragged piece's actual mass (F=ma), so the SAME
-  // stiffness/damping here already makes heavier dice feel heavier
-  // without any extra per-tier number.
-  const DRAG_SPRING_STIFFNESS = 340;
-  const DRAG_SPRING_DAMPING = 34;
+  // Snapback spring: deliberately underdamped, so a rejected drop
+  // overshoots and settles like it bounced off a wall. A real spring
+  // constant, not per-value tuning — P.stepSpring divides by the
+  // dragged piece's actual mass (F=ma), so this same stiffness/damping
+  // already makes a heavier piece feel heavier without any extra
+  // per-tier number. The piece being actively dragged has no animation
+  // of its own — it tracks the pointer 1:1 (see onPointerMove).
   const SNAPBACK_STIFFNESS = 170;
   const SNAPBACK_DAMPING = 11;
-  const MAX_TILT_DEG = 6;
-  const TILT_PER_VELOCITY = 0.01; // deg of "lean" per px/s of lateral speed
 
   function loadSaved() {
     try {
@@ -91,13 +85,52 @@
     }
   }
 
+  // Persists the live game (board/queue/score/moves/gameOver) so a
+  // reload resumes where the player left off, not just best score and
+  // board size. Called right after every state mutation, independent
+  // of whatever animation is still playing it out visually — the
+  // logical state is already final at that point (see S.placePiece).
+  // rng is never saved (not serializable, and a resumed game doesn't
+  // need to replay it) — it just gets a fresh Math.random().
+  function persistGameState() {
+    persist({
+      game: {
+        config: state.config,
+        board: state.board,
+        queue: state.queue,
+        score: state.score,
+        moves: state.moves,
+        gameOver: state.gameOver,
+      },
+    });
+  }
+
+  // A saved game only resumes if it matches the board size currently
+  // selected — a size change (or a first visit, or cleared storage)
+  // starts fresh instead of trying to replay a mismatched board.
+  function restoredState(saved, config) {
+    const g = saved.game;
+    if (!g || !Array.isArray(g.board) || !Array.isArray(g.queue)) return null;
+    if (!g.config || g.config.boardSize !== config.boardSize) return null;
+    return {
+      config: g.config,
+      board: g.board,
+      queue: g.queue,
+      score: g.score || 0,
+      moves: g.moves || 0,
+      gameOver: !!g.gameOver,
+      lastMerges: [],
+      rng: Math.random,
+    };
+  }
+
   let saved = loadSaved();
   let config = {
     ...D.DEFAULT_CONFIG,
     boardSize: saved.boardSize || D.DEFAULT_CONFIG.boardSize,
   };
   let bestScore = saved.bestScore || 0;
-  let state = S.createState(config);
+  let state = restoredState(saved, config) || S.createState(config);
 
   function render(boardOptions = {}) {
     R.renderBoard(boardEl, state, boardOptions);
@@ -127,6 +160,7 @@
 
   function newGame() {
     state = S.createState(config);
+    persistGameState();
     render();
   }
 
@@ -145,6 +179,7 @@
     const placedCells = S.shapeCellsAt(piece, target.r, target.c);
 
     S.placePiece(state, target.r, target.c, selected);
+    persistGameState();
     const merges = state.lastMerges;
 
     if (!merges.length) {
@@ -335,7 +370,7 @@
 
     const oldPiece = state.queue[0];
     const rotatedPiece = D.rotatePiece(oldPiece);
-    const mass = D.massForValue(oldPiece.cells[0].value);
+    const mass = D.pieceMass(oldPiece);
     const rotateMs = Math.min(MAX_ROTATE_MS, D.scaleWithMass(ROTATE_ANIMATION_MS, mass));
 
     // rotatePiece maps cells 1:1 by array index, so pairing old cell i
@@ -346,6 +381,7 @@
 
     rotateSettling = true;
     S.rotateQueueHead(state);
+    persistGameState();
     R.renderQueue(currentPieceEl, nextPieceEl, state);
 
     const newPieceEl = currentPieceEl.querySelector('.piece');
@@ -403,37 +439,13 @@
     dragLocked = false;
   }
 
-  // Runs every frame while a piece is held: the piece's on-screen
-  // position chases the pointer's offset (drag.targetX/Y) through a
-  // damped spring instead of matching it 1:1, and a lateral "lean"
-  // proportional to the spring's own velocity sells the piece as
-  // something with mass being carried, not a cursor decal.
-  function startDragFollow(d) {
-    d.physicsActive = true;
-    let lastT = performance.now();
-    function frame(now) {
-      if (!d.physicsActive) return;
-      const dt = Math.min((now - lastT) / 1000, 1 / 30);
-      lastT = now;
-      const stepX = P.stepSpring(d.visX, d.visVelX, d.targetX, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt, d.mass);
-      const stepY = P.stepSpring(d.visY, d.visVelY, d.targetY, DRAG_SPRING_STIFFNESS, DRAG_SPRING_DAMPING, dt, d.mass);
-      d.visX = stepX.value;
-      d.visVelX = stepX.velocity;
-      d.visY = stepY.value;
-      d.visVelY = stepY.velocity;
-      const tilt = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, d.visVelX * TILT_PER_VELOCITY));
-      d.pieceEl.style.transform = `translate(${d.visX}px, ${d.visY}px) rotate(${tilt.toFixed(2)}deg)`;
-      requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
-  }
-
   // Springs a rejected/cancelled piece from wherever it was released
-  // back to (0, 0) in its slot, carrying its current velocity so the
-  // motion reads as continuous rather than restarting from rest. Mass
-  // flows through here too (F=ma in P.stepSpring), so a heavier piece
-  // overshoots and settles more slowly on the way back.
-  function springBack(pieceEl, startX, startY, velX, velY, mass) {
+  // back to (0, 0) in its slot. Starts from rest — the piece was
+  // tracking the pointer 1:1 while held (no animation, no velocity of
+  // its own; see onPointerMove) — so this is the only motion the piece
+  // has. Mass flows through here too (F=ma in P.stepSpring), so a
+  // heavier piece overshoots and settles more slowly on the way back.
+  function springBack(pieceEl, startX, startY, mass) {
     dragLocked = true;
     springBackPieceEl = pieceEl;
     const pos = { x: startX, y: startY };
@@ -452,7 +464,6 @@
     };
     const cancelX = P.runSpring({
       from: startX,
-      velocity: velX,
       target: 0,
       stiffness: SNAPBACK_STIFFNESS,
       damping: SNAPBACK_DAMPING,
@@ -465,7 +476,6 @@
     });
     const cancelY = P.runSpring({
       from: startY,
-      velocity: velY,
       target: 0,
       stiffness: SNAPBACK_STIFFNESS,
       damping: SNAPBACK_DAMPING,
@@ -551,7 +561,7 @@
     drag = {
       pointerId: e.pointerId,
       pieceEl,
-      mass: D.massForValue(state.queue[0].cells[0].value),
+      mass: D.pieceMass(state.queue[0]),
       grabDr: Number(slot.dataset.dr),
       grabDc: Number(slot.dataset.dc),
       startX: e.clientX,
@@ -560,11 +570,6 @@
       target: null,
       targetX: 0,
       targetY: 0,
-      visX: 0,
-      visY: 0,
-      visVelX: 0,
-      visVelY: 0,
-      physicsActive: false,
     };
     pieceEl.setPointerCapture(e.pointerId);
     pieceEl.addEventListener('pointermove', onPointerMove);
@@ -572,6 +577,9 @@
     pieceEl.addEventListener('pointercancel', onPointerCancel);
   }
 
+  // While held, the piece tracks the pointer exactly (translate by the
+  // same delta the pointer has moved from the press point) — no lag,
+  // no lean, no animation of its own.
   function onPointerMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const dx = e.clientX - drag.startX;
@@ -583,9 +591,9 @@
       if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
       drag.dragging = true;
       drag.pieceEl.classList.add('piece--dragging');
-      startDragFollow(drag);
     }
 
+    drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
     updateDragPreview(e.clientX, e.clientY);
   }
 
@@ -606,8 +614,6 @@
       return;
     }
 
-    drag.physicsActive = false;
-
     if (commit && target && S.canPlaceAt(state, state.queue[0], target.r, target.c)) {
       const selected = { r: target.r + drag.grabDr, c: target.c + drag.grabDc };
       commitPlacement(target, selected);
@@ -616,11 +622,10 @@
     }
 
     // Invalid drop (or cancelled): the piece springs back to its slot
-    // carrying whatever velocity it was released with — a hard flick
-    // overshoots and settles instead of teleporting home — and any
-    // cells it was hovering over shake, as if it bounced off them.
+    // from wherever it was released, and any cells it was hovering
+    // over shake, as if it bounced off them.
     if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c), drag.mass);
-    springBack(pieceEl, drag.visX, drag.visY, drag.visVelX, drag.visVelY, drag.mass);
+    springBack(pieceEl, drag.targetX, drag.targetY, drag.mass);
     drag = null;
   }
 
