@@ -622,9 +622,7 @@
     clearPreview();
 
     if (!dragging) {
-      // A tap: rotate the piece in place instead of placing it. The
-      // spin plays even when the shape is symmetric (a single die) so
-      // the tap always reads as having registered.
+      // A tap: rotate the piece in place instead of placing it.
       if (commit) rotateCurrentPiece();
       drag = null;
       return;
