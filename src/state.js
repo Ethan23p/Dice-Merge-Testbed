@@ -122,7 +122,7 @@ const DiceMergeState = (() => {
       const [r, c] = cell;
       if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
       const cluster = floodCluster(state, r, c);
-      if (cluster.length >= D.MERGE_MIN_CLUSTER) {
+      if (cluster.length >= D.params.mergeMinCluster) {
         const value = state.board[r][c];
         const { newValue, massReleased, score } = D.resolveClusterMass(value, cluster.length);
 

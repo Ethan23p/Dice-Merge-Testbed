@@ -17,6 +17,7 @@
   const S = DiceMergeState;
   const R = DiceMergeRender;
   const P = DiceMergePhysics;
+  const CFG = DiceMergeConfig;
 
   const boardEl = document.getElementById('board');
   const currentPieceEl = document.getElementById('current-piece');
@@ -31,42 +32,23 @@
   const gameOverEl = document.getElementById('game-over');
   const gameOverScoreEl = document.getElementById('game-over-score');
   const playAgainBtn = document.getElementById('play-again-btn');
+  const configToggleBtn = document.getElementById('config-toggle-btn');
+  const configPanelEl = document.getElementById('config-panel');
+  const configBodyEl = document.getElementById('config-body');
+  const pinnedHudEl = document.getElementById('pinned-config');
+  const exportBtn = document.getElementById('config-export-btn');
 
   const STORAGE_KEY = 'dice-merge-testbed:v2';
-  const DRAG_THRESHOLD_PX = 6;
-  const ROTATE_ANIMATION_MS = 180;
-  // A consumed die's flight is paced per lateral hop, not as one total
-  // divided across however many hops it has — so a longer path takes
-  // proportionally longer instead of the same total time getting cut
-  // into thinner, harder-to-follow slices.
-  const BASE_HOP_MS = 170;
-  // Every *_MS above is tuned for a mass-1 (value-1) die and scaled up
-  // from there via D.scaleWithMass — these caps just stop an extreme
-  // late-game value from stretching an animation absurdly long.
-  const MAX_ROTATE_MS = 360;
-  const MAX_HOP_MS = 260;
-  const MAX_SETTLE_MS = 900;
-  // A placement has no landing animation of its own (see render.js), so
-  // there's nothing to wait out before a merge starts converging —
-  // released and placed IS the first frame a merge plays from. Only a
-  // beat between cascade waves remains, so a wave's dice visibly finish
-  // arriving before the next wave's convergence starts.
-  const LANDING_BEAT_MS = 0;
-  const SETTLE_BEAT_MS = 70;
 
+  // Every timing/spring/threshold constant below is sourced live from
+  // the config panel (see config.js) via CFG.get(id) at the point of
+  // use, rather than being a fixed const read once — so dragging a
+  // slider in the panel takes effect on the very next rotate/merge/
+  // drag, no reload needed. hopDurationForValue reads its two inputs
+  // the same way, every time it's called.
   function hopDurationForValue(value) {
-    return Math.min(MAX_HOP_MS, D.scaleWithMass(BASE_HOP_MS, D.massForValue(value)));
+    return Math.min(CFG.get('hopMaxMs'), D.scaleWithMass(CFG.get('hopBaseMs'), D.massForValue(value)));
   }
-
-  // Snapback spring: deliberately underdamped, so a rejected drop
-  // overshoots and settles like it bounced off a wall. A real spring
-  // constant, not per-value tuning — P.stepSpring divides by the
-  // dragged piece's actual mass (F=ma), so this same stiffness/damping
-  // already makes a heavier piece feel heavier without any extra
-  // per-tier number. The piece being actively dragged has no animation
-  // of its own — it tracks the pointer 1:1 (see onPointerMove).
-  const SNAPBACK_STIFFNESS = 170;
-  const SNAPBACK_DAMPING = 11;
 
   function loadSaved() {
     try {
@@ -207,9 +189,11 @@
 
     // The placed piece has no landing animation to wait out, so the
     // very frame that shows it placed is already the frame a merge
-    // converges from — released and placed IS the start of the merge.
-    if (LANDING_BEAT_MS > 0) {
-      window.setTimeout(() => playMergeWaves(waves, 0, workingBoard), LANDING_BEAT_MS);
+    // converges from — released and placed IS the start of the merge,
+    // unless the panel has dialed in a deliberate pause here.
+    const landingBeatMs = CFG.get('landingBeatMs');
+    if (landingBeatMs > 0) {
+      window.setTimeout(() => playMergeWaves(waves, 0, workingBoard), landingBeatMs);
     } else {
       playMergeWaves(waves, 0, workingBoard);
     }
@@ -241,7 +225,7 @@
       const maxHops = m.consumed.reduce((max, c) => Math.max(max, c.path.length - 1), 0);
       waveMs = Math.max(waveMs, maxHops * hopMs);
     });
-    waveMs = Math.min(MAX_SETTLE_MS, waveMs);
+    waveMs = Math.min(CFG.get('settleMaxMs'), waveMs);
 
     animateMergeConvergence(waveMerges);
 
@@ -269,7 +253,7 @@
           { targetCells: nextWave.map((m) => ({ r: m.r, c: m.c })) }
         );
         playMergeWaves(waves, waveIndex + 1, workingBoard);
-      }, SETTLE_BEAT_MS);
+      }, CFG.get('settleBeatMs'));
     }, waveMs);
   }
 
@@ -371,7 +355,7 @@
     const oldPiece = state.queue[0];
     const rotatedPiece = D.rotatePiece(oldPiece);
     const mass = D.pieceMass(oldPiece);
-    const rotateMs = Math.min(MAX_ROTATE_MS, D.scaleWithMass(ROTATE_ANIMATION_MS, mass));
+    const rotateMs = Math.min(CFG.get('rotateMaxMs'), D.scaleWithMass(CFG.get('rotateBaseMs'), mass));
 
     // rotatePiece maps cells 1:1 by array index, so pairing old cell i
     // with rotated cell i identifies which specific die moved where.
@@ -448,6 +432,8 @@
   function springBack(pieceEl, startX, startY, mass) {
     dragLocked = true;
     springBackPieceEl = pieceEl;
+    const stiffness = CFG.get('snapbackStiffness');
+    const damping = CFG.get('snapbackDamping');
     const pos = { x: startX, y: startY };
     let pending = 2;
     const applyTransform = () => {
@@ -465,8 +451,8 @@
     const cancelX = P.runSpring({
       from: startX,
       target: 0,
-      stiffness: SNAPBACK_STIFFNESS,
-      damping: SNAPBACK_DAMPING,
+      stiffness,
+      damping,
       mass,
       onStep: (v) => {
         pos.x = v;
@@ -477,8 +463,8 @@
     const cancelY = P.runSpring({
       from: startY,
       target: 0,
-      stiffness: SNAPBACK_STIFFNESS,
-      damping: SNAPBACK_DAMPING,
+      stiffness,
+      damping,
       mass,
       onStep: (v) => {
         pos.y = v;
@@ -588,7 +574,7 @@
     drag.targetY = dy;
 
     if (!drag.dragging) {
-      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      if (Math.hypot(dx, dy) < CFG.get('dragThresholdPx')) return;
       drag.dragging = true;
       drag.pieceEl.classList.add('piece--dragging');
     }
@@ -643,7 +629,10 @@
 
   // --- Toolbar / settings / game-over ------------------------------------
 
-  newGameBtn.addEventListener('click', newGame);
+  newGameBtn.addEventListener('click', () => {
+    settingsDialog.close();
+    newGame();
+  });
   playAgainBtn.addEventListener('click', newGame);
 
   settingsBtn.addEventListener('click', () => settingsDialog.showModal());
@@ -665,6 +654,217 @@
     settingsDialog.close();
     newGame();
   });
+
+  // --- Tuning panel --------------------------------------------------
+  //
+  // Every row is built from CFG.SCHEMA and reads/writes through CFG
+  // (config.js) — main.js never touches localStorage or CFG's internal
+  // store directly. A row can exist in two places at once: the full
+  // panel's body (built once, stays in the DOM the whole session) and
+  // the pinned HUD (rebuilt whenever the pinned set changes). Editing
+  // either copy has to update the other, so every DOM node a row
+  // creates is registered here by config id and kept in sync.
+
+  const rowRegistry = new Map(); // id -> { valueEls: Set<{input, valueEl, scope}>, pinEls: Set<{input, scope}> }
+
+  function registryFor(id) {
+    if (!rowRegistry.has(id)) rowRegistry.set(id, { valueEls: new Set(), pinEls: new Set() });
+    return rowRegistry.get(id);
+  }
+
+  function clearScope(scope) {
+    rowRegistry.forEach((entry) => {
+      entry.valueEls.forEach((rec) => {
+        if (rec.scope === scope) entry.valueEls.delete(rec);
+      });
+      entry.pinEls.forEach((rec) => {
+        if (rec.scope === scope) entry.pinEls.delete(rec);
+      });
+    });
+  }
+
+  function decimalsFor(step) {
+    const s = String(step);
+    return s.includes('.') ? s.split('.')[1].length : 0;
+  }
+
+  function formatValue(item, value) {
+    return `${value.toFixed(decimalsFor(item.step))}${item.unit}`;
+  }
+
+  function syncValueDisplays(id) {
+    const item = CFG.SCHEMA.find((i) => i.id === id);
+    const value = CFG.get(id);
+    registryFor(id).valueEls.forEach(({ input, valueEl }) => {
+      if (document.activeElement !== input) input.value = String(value);
+      valueEl.textContent = formatValue(item, value);
+    });
+  }
+
+  function syncPinDisplays(id) {
+    const pinned = CFG.isPinned(id);
+    registryFor(id).pinEls.forEach(({ input }) => {
+      input.checked = pinned;
+    });
+  }
+
+  function refreshAllDisplays() {
+    CFG.SCHEMA.forEach((item) => syncValueDisplays(item.id));
+  }
+
+  function buildPinToggle(item, scope) {
+    const label = document.createElement('label');
+    label.className = 'pin-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = CFG.isPinned(item.id);
+    input.setAttribute('aria-label', `Pin "${item.label}" to the game view`);
+    const track = document.createElement('span');
+    track.className = 'pin-toggle-track';
+    input.addEventListener('change', () => {
+      CFG.setPinned(item.id, input.checked);
+      syncPinDisplays(item.id);
+      renderPinnedHud();
+    });
+    label.appendChild(input);
+    label.appendChild(track);
+    registryFor(item.id).pinEls.add({ input, scope });
+    return label;
+  }
+
+  // `compact` drops the min/max footer (used in the pinned HUD, where
+  // space is at a premium); `scope` tags this row's DOM nodes so a HUD
+  // rebuild can find and drop exactly its own previous nodes without
+  // touching the panel body's permanent copies.
+  function buildConfigRow(item, { compact = false, scope = 'panel' } = {}) {
+    const row = document.createElement('div');
+    row.className = 'config-row';
+
+    const head = document.createElement('div');
+    head.className = 'config-row-head';
+    const label = document.createElement('span');
+    label.className = 'config-row-label';
+    label.textContent = item.label;
+    const valueEl = document.createElement('span');
+    valueEl.className = 'config-row-value';
+    valueEl.textContent = formatValue(item, CFG.get(item.id));
+    head.appendChild(label);
+    head.appendChild(valueEl);
+    row.appendChild(head);
+
+    const control = document.createElement('div');
+    control.className = 'config-row-control';
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(item.min);
+    input.max = String(item.max);
+    input.step = String(item.step);
+    input.value = String(CFG.get(item.id));
+    input.addEventListener('input', () => {
+      CFG.set(item.id, Number(input.value));
+      syncValueDisplays(item.id);
+    });
+    control.appendChild(input);
+    control.appendChild(buildPinToggle(item, scope));
+    row.appendChild(control);
+
+    if (!compact) {
+      const bounds = document.createElement('div');
+      bounds.className = 'config-row-bounds';
+      const lo = document.createElement('span');
+      lo.textContent = `${item.min}${item.unit}`;
+      const hi = document.createElement('span');
+      hi.textContent = `${item.max}${item.unit}`;
+      bounds.appendChild(lo);
+      bounds.appendChild(hi);
+      row.appendChild(bounds);
+    }
+
+    registryFor(item.id).valueEls.add({ input, valueEl, scope });
+    return row;
+  }
+
+  function renderConfigBody() {
+    configBodyEl.innerHTML = '';
+    let currentGroup = null;
+    CFG.SCHEMA.forEach((item) => {
+      if (item.group !== currentGroup) {
+        currentGroup = item.group;
+        const heading = document.createElement('div');
+        heading.className = 'config-group-heading';
+        heading.textContent = currentGroup;
+        configBodyEl.appendChild(heading);
+      }
+      configBodyEl.appendChild(buildConfigRow(item, { scope: 'panel' }));
+    });
+  }
+
+  function renderPinnedHud() {
+    clearScope('hud');
+    pinnedHudEl.innerHTML = '';
+    const ids = CFG.pinnedIds();
+    pinnedHudEl.hidden = ids.length === 0;
+    ids.forEach((id) => {
+      const item = CFG.SCHEMA.find((i) => i.id === id);
+      pinnedHudEl.appendChild(buildConfigRow(item, { compact: true, scope: 'hud' }));
+    });
+  }
+
+  let configPanelOpen = false;
+  function setConfigPanelOpen(open) {
+    configPanelOpen = open;
+    configPanelEl.hidden = !open;
+  }
+  configToggleBtn.addEventListener('click', () => setConfigPanelOpen(!configPanelOpen));
+
+  document.getElementById('cfg-set-all-default').addEventListener('click', () => {
+    CFG.setAllAsDefault();
+  });
+  document.getElementById('cfg-reset-all-initial').addEventListener('click', () => {
+    CFG.resetAllToInitial();
+    refreshAllDisplays();
+  });
+  document.getElementById('cfg-reset-all-default').addEventListener('click', () => {
+    CFG.resetAllToDefault();
+    refreshAllDisplays();
+  });
+  document.getElementById('cfg-set-pinned-default').addEventListener('click', () => {
+    CFG.setPinnedAsDefault();
+  });
+  document.getElementById('cfg-reset-pinned-initial').addEventListener('click', () => {
+    CFG.resetPinnedToInitial();
+    refreshAllDisplays();
+  });
+  document.getElementById('cfg-reset-pinned-default').addEventListener('click', () => {
+    CFG.resetPinnedToDefault();
+    refreshAllDisplays();
+  });
+
+  // Clipboard first (the fast path); only fall back to a file download
+  // if the Clipboard API is unavailable or permission is denied — not
+  // every export needs to also drop a file when the copy worked fine.
+  exportBtn.addEventListener('click', () => {
+    const text = CFG.exportText();
+    const download = () => {
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'dice-merge-config.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).catch(download);
+    } else {
+      download();
+    }
+  });
+
+  renderConfigBody();
+  renderPinnedHud();
 
   render();
 })();

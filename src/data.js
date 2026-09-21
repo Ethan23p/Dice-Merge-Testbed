@@ -45,55 +45,54 @@ const DiceMergeData = (() => {
     return PIP_LAYOUTS[value] || null;
   }
 
-  // Every die value stands for a "mass" that doubles per tier — used
-  // for scoring and animation weight (a heavier die drops/impacts
-  // harder), not for deciding what a merge turns into:
-  //   mass(1)=1, mass(2)=2, mass(3)=4, mass(4)=8, ...
-  function massForValue(value) {
-    return 2 ** (value - 1);
-  }
+  // Balance knobs that the config panel (see config.js) can retune
+  // live. Read through `params.X` at call time everywhere below,
+  // rather than closed-over constants, so a panel change takes effect
+  // on the very next roll/merge — no reload needed. This object's
+  // starting values ARE the "initial" values recorded in config.js's
+  // schema; keep the two in sync if either changes.
+  const params = {
+    massBase: 2, // mass(value) = massBase ** (value - 1)
+    massExponent: 0.5, // scaleWithMass(base, mass) = base * mass ** massExponent
+    scoreMultiplier: 10, // score = massReleased * scoreMultiplier
+    mergeMinCluster: 3, // dice needed, same-value and touching, to merge
+    spawnTemperature: 2, // higher = flatter spawn-rarity curve
+    spawnValuePool: 8, // highest value ever rolled for as a spawn
+  };
 
-  const SCORE_PER_MASS = 10;
+  // Every die value stands for a "mass" that grows per tier — used for
+  // scoring and animation weight (a heavier die drops/impacts harder),
+  // not for deciding what a merge turns into. With the default base of
+  // 2 this doubles per tier: mass(1)=1, mass(2)=2, mass(3)=4, ...
+  function massForValue(value) {
+    return params.massBase ** (value - 1);
+  }
 
   // 3+ same-value dice reaching critical mass together (a fusion
   // threshold, not a value threshold) is what triggers a merge at all.
-  const MERGE_MIN_CLUSTER = 3;
-
-  // The single place a cluster's outcome is decided. The merge itself
-  // is simple and fixed: any qualifying cluster becomes one die worth
-  // value+1, however many dice were in it — no jumping multiple tiers
-  // in one merge. Score rewards the mass consumed to get there: bigger
-  // clusters (and heavier dice) are worth more even though they all
-  // land on the same value+1 result.
   function resolveClusterMass(value, clusterSize) {
     const newValue = value + 1;
     const massReleased = massForValue(value) * clusterSize - massForValue(newValue);
-    return { newValue, massReleased, score: massReleased * SCORE_PER_MASS };
+    return { newValue, massReleased, score: massReleased * params.scoreMultiplier };
   }
 
   // What spawns is governed by the same mass law, not a separate hand-
   // picked table: heavier values are exponentially rarer, the way
   // higher-energy states are in a Boltzmann distribution — one
   // temperature constant sets how sharply rarity falls off with mass,
-  // rather than a percentage being chosen per value. SPAWN_TEMPERATURE
-  // = 2 reproduces roughly the old hand-tuned 55/30/15 split for
-  // values 1-3, but — because it's a real curve rather than a lookup
-  // table with a hard edge — it also lets a rare 4 or 5 spawn instead
-  // of never happening at all above the old table's top entry.
-  const SPAWN_TEMPERATURE = 2;
-  // Values beyond this have astronomically small weight (e^-64 or
-  // smaller at this temperature) — the cutoff is just where summing
-  // more terms stops changing anything, not an authored ceiling.
-  const SPAWN_VALUE_POOL = 8;
-
+  // rather than a percentage being chosen per value. The default
+  // temperature of 2 reproduces roughly the old hand-tuned 55/30/15
+  // split for values 1-3, but — because it's a real curve rather than
+  // a lookup table with a hard edge — it also lets a rare 4 or 5 spawn
+  // instead of never happening at all above the old table's top entry.
   function spawnWeight(value) {
-    return Math.exp(-massForValue(value) / SPAWN_TEMPERATURE);
+    return Math.exp(-massForValue(value) / params.spawnTemperature);
   }
 
   function rollSpawnValue(rng = Math.random) {
     const weights = [];
     let total = 0;
-    for (let value = 1; value <= SPAWN_VALUE_POOL; value++) {
+    for (let value = 1; value <= params.spawnValuePool; value++) {
       const w = spawnWeight(value);
       weights.push(w);
       total += w;
@@ -107,14 +106,15 @@ const DiceMergeData = (() => {
   }
 
   // Real materials take longer to settle the more massive they are — a
-  // spring's natural period scales with sqrt(mass/stiffness) — so any
-  // animation whose length or intensity should reflect "how much mass
-  // is involved" scales through this one function instead of each spot
-  // picking its own per-tier multiplier. At mass=1 this is a no-op
-  // (returns `base` unchanged), so the lightest die reproduces exactly
-  // whatever baseline feel `base` was tuned for.
+  // spring's natural period scales with mass**massExponent/stiffness —
+  // so any animation whose length or intensity should reflect "how
+  // much mass is involved" scales through this one function instead of
+  // each spot picking its own per-tier multiplier. At mass=1 this is a
+  // no-op (returns `base` unchanged), so the lightest die reproduces
+  // exactly whatever baseline feel `base` was tuned for. Default
+  // exponent is 0.5 (square root).
   function scaleWithMass(base, mass) {
-    return base * Math.sqrt(mass);
+    return base * mass ** params.massExponent;
   }
 
   // Piece shapes: relative (dr, dc) offsets, normalized so the
@@ -205,13 +205,10 @@ const DiceMergeData = (() => {
     BASE_PALETTE,
     colorForValue,
     pipLayoutForValue,
-    SPAWN_TEMPERATURE,
-    SPAWN_VALUE_POOL,
+    params,
     spawnWeight,
     rollSpawnValue,
     massForValue,
-    SCORE_PER_MASS,
-    MERGE_MIN_CLUSTER,
     resolveClusterMass,
     scaleWithMass,
     SHAPE_LIBRARY,
