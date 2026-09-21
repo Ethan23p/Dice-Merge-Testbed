@@ -353,6 +353,25 @@
     interruptRotateSettle();
 
     const oldPiece = state.queue[0];
+
+    // A single die has no position to move to — rotatePiece is a
+    // geometric no-op for one cell, so the usual position-FLIP below
+    // would animate nothing. Spin the die in place instead, fast, so a
+    // tap on a lone die still reads as having registered.
+    if (oldPiece.cells.length === 1) {
+      S.rotateQueueHead(state);
+      persistGameState();
+      R.renderQueue(currentPieceEl, nextPieceEl, state);
+      const dieEl = currentPieceEl.querySelector('.piece .die');
+      if (dieEl) {
+        dieEl.classList.remove('die--spin');
+        void dieEl.offsetWidth;
+        dieEl.classList.add('die--spin');
+        dieEl.addEventListener('animationend', () => dieEl.classList.remove('die--spin'), { once: true });
+      }
+      return;
+    }
+
     const rotatedPiece = D.rotatePiece(oldPiece);
     const mass = D.pieceMass(oldPiece);
     const rotateMs = Math.min(CFG.get('rotateMaxMs'), D.scaleWithMass(CFG.get('rotateBaseMs'), mass));
@@ -416,7 +435,7 @@
     springBackCancelFns.forEach((cancel) => cancel && cancel());
     springBackCancelFns = [];
     if (springBackPieceEl) {
-      springBackPieceEl.classList.remove('piece--dragging');
+      springBackPieceEl.classList.remove('piece--dragging', 'piece--tracking');
       springBackPieceEl.style.transform = '';
     }
     springBackPieceEl = null;
@@ -576,7 +595,13 @@
     if (!drag.dragging) {
       if (Math.hypot(dx, dy) < CFG.get('dragThresholdPx')) return;
       drag.dragging = true;
-      drag.pieceEl.classList.add('piece--dragging');
+      // 'piece--tracking' is what actually turns off pointer-events (so
+      // elementFromPoint below can see the board cell under the piece,
+      // not the piece itself). It's scoped tightly to live dragging and
+      // dropped the instant the pointer is released — unlike
+      // 'piece--dragging', which stays through the springback so the
+      // piece keeps its elevated/shadowed look while it animates home.
+      drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
     }
 
     drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -589,6 +614,11 @@
     pieceEl.removeEventListener('pointermove', onPointerMove);
     pieceEl.removeEventListener('pointerup', onPointerUp);
     pieceEl.removeEventListener('pointercancel', onPointerCancel);
+    // Pointer tracking is over the instant the pointer lifts, whether or
+    // not a springback follows — drop the pointer-events block right
+    // here so the piece is grabbable/tappable again immediately, instead
+    // of staying inert for the whole springback animation.
+    pieceEl.classList.remove('piece--tracking');
     clearPreview();
 
     if (!dragging) {

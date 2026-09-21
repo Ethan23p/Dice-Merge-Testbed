@@ -26,6 +26,7 @@ const DiceMergeConfig = (() => {
     // --- Rotation ---
     { id: 'rotateBaseMs', group: 'Rotation', label: 'Rotate duration (base)', unit: 'ms', initial: 180, min: 0, max: 1000, step: 10, apply: { type: 'main' } },
     { id: 'rotateMaxMs', group: 'Rotation', label: 'Rotate duration (heavy-piece cap)', unit: 'ms', initial: 360, min: 100, max: 2000, step: 10, apply: { type: 'main' } },
+    { id: 'singleDieSpinMs', group: 'Rotation', label: 'Single-die tap spin duration', unit: 'ms', initial: 220, min: 50, max: 800, step: 10, apply: { type: 'css', varName: '--cfg-single-die-spin', unit: 'ms' } },
 
     // --- Merge timing ---
     { id: 'hopBaseMs', group: 'Merge Timing', label: 'Hop duration (base)', unit: 'ms', initial: 170, min: 20, max: 800, step: 10, apply: { type: 'main' } },

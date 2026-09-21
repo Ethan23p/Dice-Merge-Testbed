@@ -311,11 +311,26 @@ body {
   cursor: grabbing;
   position: relative;
   z-index: 20;
-  pointer-events: none;
 }
 
 .piece--dragging .die {
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
+}
+
+/* Only while the pointer is actively tracking (not during the
+   springback that follows release) — needed so elementFromPoint can
+   see the board cell under the piece instead of the piece itself. */
+.piece--tracking {
+  pointer-events: none;
+}
+
+@keyframes die-spin-360 {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.die--spin {
+  animation: die-spin-360 var(--cfg-single-die-spin, 220ms) ease-out;
 }
 
 /* Only a piece that genuinely just entered the slot (main.js's
