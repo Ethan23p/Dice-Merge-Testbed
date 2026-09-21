@@ -140,7 +140,29 @@
     }
   }
 
+  // True from the moment a merge cascade starts animating until its
+  // final wave has visually resolved. Placement, rotation, New Game and
+  // a board-size change all read state synchronously and would produce
+  // a perfectly consistent result if run mid-cascade — but the wave
+  // animation's own intermediate re-renders (see playMergeWaves) draw
+  // from a `workingBoard` snapshot taken back when the cascade started,
+  // not from live state, so an action that lands in that window could
+  // get visually clobbered by the cascade's next scheduled frame. Cheaper
+  // to just block input for the (sub-second) duration of the cascade than
+  // to make every intermediate render re-derive itself from live state.
+  let mergeAnimating = false;
+
+  function finishMergeAnimation() {
+    mergeAnimating = false;
+    render();
+  }
+
   function newGame() {
+    // Resetting state out from under a cascade still writing to
+    // workingBoard is exactly the race mergeAnimating exists to
+    // prevent, so this quietly no-ops during one, the same way a
+    // pointerdown does.
+    if (mergeAnimating) return;
     state = S.createState(config);
     persistGameState();
     render();
@@ -179,6 +201,7 @@
       (waves[m.wave] || (waves[m.wave] = [])).push(m);
     });
 
+    mergeAnimating = true;
     R.renderBoard(
       boardEl,
       { config: state.config, board: workingBoard, lastMerges: [] },
@@ -211,7 +234,7 @@
   function playMergeWaves(waves, waveIndex, workingBoard) {
     const waveMerges = waves[waveIndex];
     if (!waveMerges) {
-      render();
+      finishMergeAnimation();
       return;
     }
 
@@ -238,7 +261,7 @@
       window.setTimeout(() => {
         const nextWave = waves[waveIndex + 1];
         if (!nextWave) {
-          render();
+          finishMergeAnimation();
           return;
         }
         waveMerges.forEach((m) => {
@@ -552,7 +575,7 @@
   }
 
   function onPointerDown(e) {
-    if (state.gameOver || drag) return;
+    if (state.gameOver || drag || mergeAnimating) return;
     // Picking up the piece is never blocked by an animation still
     // playing on it — a mid-flight rotate or a not-yet-settled
     // snapback is interrupted (not waited out) so the piece is always

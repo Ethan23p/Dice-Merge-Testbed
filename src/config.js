@@ -97,16 +97,27 @@ const DiceMergeConfig = (() => {
   store.current = store.current || {};
   store.pinned = Array.isArray(store.pinned) ? store.pinned : [];
 
+  // Clamps to the schema's own declared range. Applied on every read as
+  // well as on set(), so a value that got into storage out of range —
+  // hand-edited localStorage, or a caller that bypassed the panel's
+  // slider — can't stay out of range either.
+  function clamp(item, value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return item.initial;
+    return Math.min(item.max, Math.max(item.min, value));
+  }
+
   function initialOf(id) {
     return byId.get(id).initial;
   }
 
   function defaultOf(id) {
-    return id in store.defaults ? store.defaults[id] : initialOf(id);
+    const item = byId.get(id);
+    return clamp(item, id in store.defaults ? store.defaults[id] : item.initial);
   }
 
   function currentOf(id) {
-    return id in store.current ? store.current[id] : defaultOf(id);
+    const item = byId.get(id);
+    return clamp(item, id in store.current ? store.current[id] : defaultOf(id));
   }
 
   // Pushes one item's current value into the system that actually
@@ -138,9 +149,11 @@ const DiceMergeConfig = (() => {
   }
 
   function set(id, value) {
-    store.current[id] = value;
+    const item = byId.get(id);
+    const clamped = clamp(item, value);
+    store.current[id] = clamped;
     saveStore();
-    applyOne(byId.get(id), value);
+    applyOne(item, clamped);
   }
 
   function setAsDefault(id) {

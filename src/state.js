@@ -157,13 +157,29 @@ const DiceMergeState = (() => {
     return { scoreGained, merges };
   }
 
+  // Shuffles in place with the game's own rng, so which of several
+  // equally-valid seed cells "wins" a merge is a deliberate coin flip
+  // recorded by the same random stream as everything else, rather than
+  // silently falling out of whatever order a piece's shape happened to
+  // list its cells in.
+  function shuffleInPlace(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
   // `selected` (optional, absolute {r, c}) is the cell the player was
   // actually holding when they dropped the piece. Merge seeds are
   // checked in order and whichever seed is checked first "wins" a
   // forming cluster (its position survives, holding the bumped value,
   // while the rest of the cluster is cleared) — so putting the
   // selected cell first here means a merge converges on the die the
-  // player was holding, not an arbitrary cell of the piece.
+  // player was holding, not an arbitrary cell of the piece. When the
+  // selected cell isn't itself part of the cluster that ends up
+  // forming, the remaining seeds are shuffled first so the survivor
+  // among *them* is picked at random instead of by shape-array order.
   function placePiece(state, r, c, selected) {
     if (state.gameOver) return state;
     const piece = state.queue[0];
@@ -174,7 +190,7 @@ const DiceMergeState = (() => {
       state.board[rr][cc] = value;
     });
 
-    let seedCells = placedCells.map(({ r: rr, c: cc }) => [rr, cc]);
+    let seedCells = shuffleInPlace(placedCells.map(({ r: rr, c: cc }) => [rr, cc]), state.rng);
     if (selected) {
       seedCells = [
         [selected.r, selected.c],

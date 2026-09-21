@@ -116,7 +116,9 @@ const DiceMergeRender = (() => {
     currentSlotEl.innerHTML = '';
     currentSlotEl.appendChild(buildPieceNode(state.queue[0], 'current'));
     nextSlotEl.innerHTML = '';
-    nextSlotEl.appendChild(buildPieceNode(state.queue[1], 'next'));
+    // Guards a shorter-than-2 queue (config.queueLength isn't actually
+    // exposed anywhere today, but nothing enforces that it stays 2).
+    if (state.queue[1]) nextSlotEl.appendChild(buildPieceNode(state.queue[1], 'next'));
   }
 
   function renderScore(scoreEl, state) {

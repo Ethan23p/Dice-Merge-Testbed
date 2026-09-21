@@ -70,9 +70,14 @@ const DiceMergeData = (() => {
 
   // 3+ same-value dice reaching critical mass together (a fusion
   // threshold, not a value threshold) is what triggers a merge at all.
+  // Clamped at 0: massBase and mergeMinCluster are tuned independently
+  // (see config.js), and a large base with a small cluster threshold
+  // can otherwise make massForValue(value)*clusterSize fall short of
+  // massForValue(newValue) — merging should never cost score, whatever
+  // those two knobs are set to.
   function resolveClusterMass(value, clusterSize) {
     const newValue = value + 1;
-    const massReleased = massForValue(value) * clusterSize - massForValue(newValue);
+    const massReleased = Math.max(0, massForValue(value) * clusterSize - massForValue(newValue));
     return { newValue, massReleased, score: massReleased * params.scoreMultiplier };
   }
 
