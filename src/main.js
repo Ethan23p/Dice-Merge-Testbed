@@ -643,14 +643,13 @@
       drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
     }
 
-    // The lift only ever offsets the piece's own rendered position —
-    // hit-testing above (updateDragPreview) still uses the raw pointer
-    // coordinates, i.e. where the thumb actually is, not where the
-    // piece appears to float. That's the point: the highlighted preview
-    // cells tell the player exactly where it'll land, precisely because
-    // the piece itself is no longer sitting on top of that answer.
+    // Hit-testing targets the same lifted point the piece is actually
+    // drawn at (raw pointer position minus the lift), not the raw
+    // pointer/thumb position — so the preview highlight always lines up
+    // with where the piece visually sits, and dropping lands it exactly
+    // there instead of one die-height below where it looks like it is.
     drag.pieceEl.style.transform = `translate(${dx}px, ${dy - drag.liftPx}px)`;
-    updateDragPreview(e.clientX, e.clientY);
+    updateDragPreview(e.clientX, e.clientY - drag.liftPx);
   }
 
   function endDrag({ commit }) {
