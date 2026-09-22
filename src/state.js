@@ -8,14 +8,24 @@
  *     score: number,
  *     moves: number,
  *     gameOver: boolean,
- *     lastMerges: {                      // for the renderer/animations to react to
- *       r, c, value, massReleased, wave,
- *       consumed: { r, c, hop, path: {r,c}[] }[],
- *     }[]
  *     rng: () => number
  *   }
  * A Piece is { cells: [{ dr, dc, value }, ...] }, offsets relative to
  * the anchor cell the player clicks. No part of this file touches the DOM.
+ *
+ * placePiece doesn't just mutate state — it also *returns* `{ steps }`,
+ * an ordered timeline of every board change the placement caused
+ * (the piece landing, its own merge cascade, gravity's shifts and
+ * whatever those bring into contact). This is the one shape the
+ * animator (animate.js) needs, whatever caused a given step:
+ *   step = {
+ *     board: number[][],                      // the board once this step lands
+ *     moves: { value, path: {r,c}[] }[],       // dice in flight this step, along their real route
+ *     pops: { r, c, massReleased }[],          // cells to flash as newly merged, once step.board is shown
+ *   }
+ * A step is never returned or stored on `state` itself — it describes
+ * a transition, not a resting state, so it has nowhere to live once
+ * the animation that plays it is done.
  */
 const DiceMergeState = (() => {
   const D = DiceMergeData;
@@ -31,8 +41,6 @@ const DiceMergeState = (() => {
       score: 0,
       moves: 0,
       gameOver: false,
-      lastMerges: [],
-      lastGravityMerges: [],
       rng,
     };
   }
@@ -136,19 +144,37 @@ const DiceMergeState = (() => {
   // exactly one tier, however large the cluster. Re-checks that cell
   // afterward so a merge can chain into a bigger neighboring cluster.
   //
-  // Each merge is tagged with a `wave`: 0 for a merge triggered
-  // directly by the placement (independent of any other merge from
-  // this same placement), N for a merge only possible because a wave
-  // (N-1) merge produced the die it consumes. The renderer uses this
-  // to animate waves in causal order — merges within a wave are
-  // independent and can play together, but a later wave has to wait
-  // for the wave that fed it to visually resolve first.
+  // The worklist carries a `wave` per entry (0 for the seeds, N+1 for
+  // a merge only possible because a wave-N merge produced the die it
+  // consumes) purely to batch this call's own steps in causal order —
+  // it never leaves this function. Because the worklist is FIFO and a
+  // push always carries the popped item's wave + 1, every wave-N entry
+  // is processed before any wave-(N+1) entry exists, so a wave
+  // boundary is exactly "the next popped item's wave changed"; that's
+  // where a step gets flushed; a trailing flush after the loop catches
+  // the last wave (no boundary follows it).
   function resolveMerges(state, seedCells) {
     let scoreGained = 0;
-    const merges = [];
+    const steps = [];
+    let waveMoves = [];
+    let wavePops = [];
+    let currentWave = 0;
+
+    function flushWave() {
+      if (wavePops.length) {
+        steps.push({ board: state.board.map((row) => row.slice()), moves: waveMoves, pops: wavePops });
+      }
+      waveMoves = [];
+      wavePops = [];
+    }
+
     const worklist = seedCells.map((cell) => ({ cell, wave: 0 }));
     while (worklist.length) {
       const { cell, wave } = worklist.shift();
+      if (wave !== currentWave) {
+        flushWave();
+        currentWave = wave;
+      }
       const [r, c] = cell;
       if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
       const cluster = floodCluster(state, r, c);
@@ -158,7 +184,10 @@ const DiceMergeState = (() => {
 
         // Each consumed die's `path` is the lateral hop-by-hop chain
         // back to the survivor (r, c) — exactly the connectivity that
-        // made it part of this cluster.
+        // made it part of this cluster. It travels as its own
+        // (pre-merge) value; every cell in a cluster shares that value
+        // by construction, so there's no ambiguity in using `value`
+        // for every move this cluster produces.
         const byKey = new Map(cluster.map((cell) => [`${cell.r},${cell.c}`, cell]));
         const pathToRoot = (cell) => {
           const path = [{ r: cell.r, c: cell.c }];
@@ -170,21 +199,18 @@ const DiceMergeState = (() => {
           return path;
         };
 
-        // Cells other than the trigger cell disappear into it — recorded
-        // so the renderer can animate them flying to the survivor along
-        // their own lateral path before the board settles into its
-        // merged state.
-        const consumed = cluster
+        cluster
           .filter((cell) => !(cell.r === r && cell.c === c))
-          .map((cell) => ({ r: cell.r, c: cell.c, hop: cell.hop, path: pathToRoot(cell) }));
+          .forEach((cell) => waveMoves.push({ value, path: pathToRoot(cell) }));
         for (const cell of cluster) state.board[cell.r][cell.c] = 0;
         state.board[r][c] = newValue;
         scoreGained += score;
-        merges.push({ r, c, value: newValue, consumed, massReleased, wave });
+        wavePops.push({ r, c, massReleased });
         worklist.push({ cell: [r, c], wave: wave + 1 });
       }
     }
-    return { scoreGained, merges };
+    flushWave();
+    return { scoreGained, steps };
   }
 
   // Each direction as the (dr, dc) every die tries to move toward.
@@ -200,35 +226,44 @@ const DiceMergeState = (() => {
   // a falling-block or match-3 board has, just usable in any of the 4
   // cardinal directions instead of always down. Each line's dice keep
   // their relative order, they just pack against the near edge with
-  // every gap squeezed to the far edge. Returns whether anything
-  // actually moved, so applyGravity knows when a further pass is a
-  // no-op rather than always looping a fixed number of times.
+  // every gap squeezed to the far edge. Returns the list of dice that
+  // actually moved, each as a move (see the `steps` shape at the top
+  // of this file) along the straight line it slid — a die's own
+  // relative order within its line never changes, so pairing the k-th
+  // occupied cell before the shift with the k-th packed slot after it
+  // is exactly which die went where; no cell along the way is ever
+  // occupied, so the path is just the two endpoints.
   function shiftBoard(state, direction) {
     const { dr, dc } = GRAVITY_VECTORS[direction];
     const size = state.config.boardSize;
-    let moved = false;
+    const moves = [];
     const vertical = dc === 0;
     for (let i = 0; i < size; i++) {
-      const values = [];
+      const cells = [];
       for (let j = 0; j < size; j++) {
-        const value = vertical ? state.board[j][i] : state.board[i][j];
-        if (value !== 0) values.push(value);
+        const r = vertical ? j : i;
+        const c = vertical ? i : j;
+        const value = state.board[r][c];
+        if (value !== 0) cells.push({ r, c, value });
       }
-      const packed = Array(size).fill(0);
       const towardStart = vertical ? dr < 0 : dc < 0;
-      const start = towardStart ? 0 : size - values.length;
-      values.forEach((v, k) => { packed[start + k] = v; });
+      const start = towardStart ? 0 : size - cells.length;
+      const packed = Array(size).fill(0);
+      cells.forEach((cell, k) => { packed[start + k] = cell.value; });
       for (let j = 0; j < size; j++) {
-        if (vertical) {
-          if (state.board[j][i] !== packed[j]) moved = true;
-          state.board[j][i] = packed[j];
-        } else {
-          if (state.board[i][j] !== packed[j]) moved = true;
-          state.board[i][j] = packed[j];
-        }
+        if (vertical) state.board[j][i] = packed[j];
+        else state.board[i][j] = packed[j];
       }
+      cells.forEach((cell, k) => {
+        const newJ = start + k;
+        const newR = vertical ? newJ : i;
+        const newC = vertical ? i : newJ;
+        if (newR !== cell.r || newC !== cell.c) {
+          moves.push({ value: cell.value, path: [{ r: cell.r, c: cell.c }, { r: newR, c: newC }] });
+        }
+      });
     }
-    return moved;
+    return moves;
   }
 
   // A constant directional pull, nothing more: shift everything toward
@@ -242,13 +277,16 @@ const DiceMergeState = (() => {
   // packed against the gravity edge has nothing left to shift.
   const GRAVITY_MAX_PASSES = 200;
   function applyGravity(state) {
-    if (!D.params.gravityEnabled) return { scoreGained: 0, merges: [] };
+    if (!D.params.gravityEnabled) return { scoreGained: 0, steps: [] };
     const direction = D.params.gravityDirection;
     const size = state.config.boardSize;
     let scoreGained = 0;
-    const merges = [];
+    const steps = [];
     for (let pass = 0; pass < GRAVITY_MAX_PASSES; pass++) {
-      const moved = shiftBoard(state, direction);
+      const moves = shiftBoard(state, direction);
+      if (moves.length) {
+        steps.push({ board: state.board.map((row) => row.slice()), moves, pops: [] });
+      }
       const seeds = [];
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
@@ -257,10 +295,10 @@ const DiceMergeState = (() => {
       }
       const result = resolveMerges(state, seeds);
       scoreGained += result.scoreGained;
-      merges.push(...result.merges);
-      if (!moved && result.merges.length === 0) break;
+      steps.push(...result.steps);
+      if (!moves.length && result.steps.length === 0) break;
     }
-    return { scoreGained, merges };
+    return { scoreGained, steps };
   }
 
   // Shuffles in place with the game's own rng, so which of several
@@ -309,15 +347,24 @@ const DiceMergeState = (() => {
   // selected cell isn't itself part of the cluster that ends up
   // forming, the remaining seeds are shuffled first so the survivor
   // among *them* is picked at random instead of by shape-array order.
+  //
+  // Returns `{ steps }`: the full timeline of this placement, from the
+  // piece landing through its own merge cascade through whatever
+  // gravity does afterward — one flat, causally-ordered sequence, with
+  // no marker for which part came from the placement and which from
+  // gravity. The animator (animate.js) plays every step the same way;
+  // there's nothing left in this shape that would let it tell gravity
+  // and placement apart, because nothing downstream needs to.
   function placePiece(state, r, c, selected) {
-    if (state.gameOver) return state;
+    if (state.gameOver) return { steps: [] };
     const piece = state.queue[0];
-    if (!canPlaceAt(state, piece, r, c)) return state;
+    if (!canPlaceAt(state, piece, r, c)) return { steps: [] };
 
     const placedCells = shapeCellsAt(piece, r, c);
     placedCells.forEach(({ r: rr, c: cc, value }) => {
       state.board[rr][cc] = value;
     });
+    const steps = [{ board: state.board.map((row) => row.slice()), moves: [], pops: [] }];
 
     let seedCells = shuffleInPlace(placedCells.map(({ r: rr, c: cc }) => [rr, cc]), state.rng);
     if (selected) {
@@ -327,24 +374,14 @@ const DiceMergeState = (() => {
       ];
     }
 
-    const { scoreGained, merges } = resolveMerges(state, seedCells);
-    state.score += scoreGained;
-    state.lastMerges = merges;
+    const placementResult = resolveMerges(state, seedCells);
+    state.score += placementResult.scoreGained;
+    steps.push(...placementResult.steps);
     state.moves += 1;
 
-    // Gravity (if on) settles the board after the placement's own
-    // merges have already resolved — it gets its own merge list rather
-    // than folding into `lastMerges` above, because the renderer's wave
-    // animation walks a locally-reconstructed copy of the board that
-    // only knows about the piece just placed (see commitPlacement in
-    // main.js); teaching it about an arbitrary board-wide shift too
-    // would be exactly the "more complicated" this feature was asked
-    // not to be. Gravity's own merges still get their score and still
-    // get a plain merge-pop flash (see renderBoard) — they just don't
-    // get the fly-together cascade animation placement merges do.
     const gravityResult = applyGravity(state);
     state.score += gravityResult.scoreGained;
-    state.lastGravityMerges = gravityResult.merges;
+    steps.push(...gravityResult.steps);
 
     state.queue.shift();
     state.queue.push(D.generatePiece(state.rng));
@@ -359,7 +396,7 @@ const DiceMergeState = (() => {
       cullUnplaceablePieces(state);
     }
 
-    return state;
+    return { steps };
   }
 
   function rotateQueueHead(state) {

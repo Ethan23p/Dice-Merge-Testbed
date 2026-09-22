@@ -72,31 +72,27 @@ const DiceMergeRender = (() => {
   // no landing animation — so the moment of release reads as directly
   // placing the piece rather than watching it land first.
   //
-  // `options.targetCells` marks the cell(s) a forming merge will
-  // converge on, so main.js's merge animation can highlight where the
-  // consumed dice are about to fly to. The actual fly-together motion
-  // needs per-element geometry (source cell -> target cell), so it's
-  // driven from main.js after this render, not from static classes here.
-  function renderBoard(boardEl, state, options = {}) {
+  // Takes a plain board matrix, not a game-state object — a board size
+  // is just `board.length`, and this function has no other reason to
+  // know about score, queue, or anything else state carries. The
+  // animator (animate.js) is the only caller that ever passes
+  // `options`, when it's mid-timeline: `pops` marks cells to flash as
+  // newly merged (see the `steps` shape in state.js — same shape,
+  // passed straight through) and `targetCells` marks cells a forming
+  // merge is about to converge on, so the flash and the fly-together
+  // motion it precedes land on the same cells the caller already knows
+  // about, not ones re-derived here.
+  function renderBoard(boardEl, board, options = {}) {
     boardEl.innerHTML = '';
-    boardEl.style.setProperty('--board-size', state.config.boardSize);
-    // Gravity's own merges (see S.applyGravity) aren't part of the wave
-    // animation — they never appear in the synthetic { lastMerges }
-    // objects main.js's wave player renders mid-cascade, only on the
-    // real state object once the board has fully settled — but they
-    // still get folded in here so they get the same merge-pop flash on
-    // that final render, instead of silently popping into place.
-    const allMerges = [...state.lastMerges, ...(state.lastGravityMerges || [])];
-    const justMerged = new Set(allMerges.map((m) => `${m.r},${m.c}`));
+    boardEl.style.setProperty('--board-size', board.length);
+    const pops = options.pops || [];
     const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
     // The mass released by the merge (see D.resolveClusterMass) drives
     // how hard the merge-pop impact hits — a bigger release visibly
     // lands with more force, the same quantity that fed the score.
-    const impactByKey = new Map(
-      allMerges.map((m) => [`${m.r},${m.c}`, m.massReleased])
-    );
+    const impactByKey = new Map(pops.map((p) => [`${p.r},${p.c}`, p.massReleased]));
 
-    state.board.forEach((row, r) => {
+    board.forEach((row, r) => {
       row.forEach((value, c) => {
         const cell = document.createElement('div');
         cell.className = 'cell';
@@ -107,7 +103,7 @@ const DiceMergeRender = (() => {
         if (value) {
           const key = `${r},${c}`;
           const die = buildDieNode(value, 'board');
-          if (justMerged.has(key)) {
+          if (impactByKey.has(key)) {
             die.classList.add('die--merge-pop');
             die.style.setProperty('--merge-impact', String(impactByKey.get(key)));
           }
