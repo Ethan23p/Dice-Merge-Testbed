@@ -114,9 +114,16 @@
   let bestScore = saved.bestScore || 0;
   let state = restoredState(saved, config) || S.createState(config);
 
+  // Recomputed on every queue render — checking all 4 rotations against
+  // the whole board is cheap at these board sizes, and this has to stay
+  // correct after every placement/merge/new-game, not just be set once.
+  function queueUnplaceable() {
+    return S.queuePlaceability(state).map((placeable) => !placeable);
+  }
+
   function render(boardOptions = {}) {
     R.renderBoard(boardEl, state, boardOptions);
-    R.renderQueue(currentPieceEl, nextPieceEl, state);
+    R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
     // Only this general render path means "a piece genuinely entered
     // the slot" (a new game, or the next piece moving up after a
     // placement) — rotation redraws the same piece by calling
@@ -207,7 +214,7 @@
       { config: state.config, board: workingBoard, lastMerges: [] },
       { targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
     );
-    R.renderQueue(currentPieceEl, nextPieceEl, state);
+    R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
     R.renderScore(scoreEl, state);
 
     // The placed piece has no landing animation to wait out, so the
@@ -384,7 +391,7 @@
     if (oldPiece.cells.length === 1) {
       S.rotateQueueHead(state);
       persistGameState();
-      R.renderQueue(currentPieceEl, nextPieceEl, state);
+      R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
       const dieEl = currentPieceEl.querySelector('.piece .die');
       if (dieEl) {
         dieEl.classList.remove('die--spin');
@@ -408,7 +415,7 @@
     rotateSettling = true;
     S.rotateQueueHead(state);
     persistGameState();
-    R.renderQueue(currentPieceEl, nextPieceEl, state);
+    R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
 
     const newPieceEl = currentPieceEl.querySelector('.piece');
     const animatedDies = [];
@@ -586,6 +593,14 @@
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!slot || !pieceEl) return;
 
+    // Lifted clear of the thumb while dragging (see onPointerMove) so
+    // the piece — and the board cells it'd land on — stay visible
+    // instead of sitting directly under the finger that's holding it.
+    // Sized off the grabbed cell's own on-screen size rather than a
+    // fixed px value, so it scales with however big dice are actually
+    // rendering right now (see --queue-die in styles.css).
+    const liftPx = slot.getBoundingClientRect().height * CFG.get('dragLiftScale');
+
     drag = {
       pointerId: e.pointerId,
       pieceEl,
@@ -598,6 +613,7 @@
       target: null,
       targetX: 0,
       targetY: 0,
+      liftPx,
     };
     pieceEl.setPointerCapture(e.pointerId);
     pieceEl.addEventListener('pointermove', onPointerMove);
@@ -627,7 +643,13 @@
       drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
     }
 
-    drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
+    // The lift only ever offsets the piece's own rendered position —
+    // hit-testing above (updateDragPreview) still uses the raw pointer
+    // coordinates, i.e. where the thumb actually is, not where the
+    // piece appears to float. That's the point: the highlighted preview
+    // cells tell the player exactly where it'll land, precisely because
+    // the piece itself is no longer sitting on top of that answer.
+    drag.pieceEl.style.transform = `translate(${dx}px, ${dy - drag.liftPx}px)`;
     updateDragPreview(e.clientX, e.clientY);
   }
 
@@ -660,9 +682,12 @@
 
     // Invalid drop (or cancelled): the piece springs back to its slot
     // from wherever it was released, and any cells it was hovering
-    // over shake, as if it bounced off them.
+    // over shake, as if it bounced off them. Starts from the piece's
+    // actual rendered position (pointer delta minus the drag lift), so
+    // it settles home in one continuous motion instead of first
+    // popping down to the un-lifted position and springing from there.
     if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c), drag.mass);
-    springBack(pieceEl, drag.targetX, drag.targetY, drag.mass);
+    springBack(pieceEl, drag.targetX, drag.targetY - drag.liftPx, drag.mass);
     drag = null;
   }
 

@@ -56,6 +56,7 @@ const DiceMergeConfig = (() => {
     // --- Input feel ---
     { id: 'dragThresholdPx', group: 'Input Feel', label: 'Drag threshold', unit: 'px', initial: 6, min: 0, max: 40, step: 1, apply: { type: 'main' } },
     { id: 'hoverDurationMs', group: 'Input Feel', label: 'Cell hover-preview transition', unit: 'ms', initial: 100, min: 0, max: 400, step: 10, apply: { type: 'css', varName: '--cfg-hover-duration', unit: 'ms' } },
+    { id: 'dragLiftScale', group: 'Input Feel', label: 'Drag lift (× piece cell size)', unit: '×', initial: 1.2, min: 0, max: 3, step: 0.1, apply: { type: 'main' } },
 
     // --- Piece entrance ---
     { id: 'entranceScale', group: 'Piece Entrance', label: 'Entrance start scale', unit: '×', initial: 0.85, min: 0.3, max: 1, step: 0.01, apply: { type: 'css', varName: '--cfg-entrance-scale', unit: '' } },

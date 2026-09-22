@@ -53,12 +53,16 @@ const DiceMergeState = (() => {
     );
   }
 
-  // Is there any (rotation, anchor) combination that fits the current
-  // piece somewhere on the board? Checked after every placement to
-  // decide game over — the board can be non-full and still be stuck.
-  function hasAnyValidPlacement(state) {
+  // Is there any (rotation, anchor) combination that fits `piece`
+  // somewhere on the board? Defaults to the queue head, but takes any
+  // piece so the UI can also ask this about the on-deck piece (see
+  // queuePlaceability) without it ever affecting game over — a piece
+  // with nowhere to go is not itself a loss condition (see
+  // isBoardFull/hasPendingMerge below), just something worth flagging
+  // before the player tries to drag it.
+  function hasAnyValidPlacement(state, piece = state.queue[0]) {
     const size = state.config.boardSize;
-    let variant = state.queue[0];
+    let variant = piece;
     for (let rot = 0; rot < 4; rot++) {
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
@@ -66,6 +70,38 @@ const DiceMergeState = (() => {
         }
       }
       variant = D.rotatePiece(variant);
+    }
+    return false;
+  }
+
+  // One entry per queue slot: can that piece (in some rotation) be
+  // placed anywhere right now? Purely informational for the UI.
+  function queuePlaceability(state) {
+    return state.queue.map((piece) => hasAnyValidPlacement(state, piece));
+  }
+
+  function isBoardFull(state) {
+    return state.board.every((row) => row.every((value) => value !== 0));
+  }
+
+  // Whole-board scan for any same-value orthogonal cluster already at
+  // or past the merge threshold. Should never actually be true in
+  // practice — every placement resolves merges touching its own cells
+  // immediately via resolveMerges — but game over is defined directly
+  // against this rather than assumed, so the definition ("the board is
+  // full and there's nothing left to merge") holds on its own even if
+  // that invariant were ever violated, instead of silently relying on it.
+  function hasPendingMerge(state) {
+    const size = state.config.boardSize;
+    const seen = new Set();
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        const key = `${r},${c}`;
+        if (seen.has(key) || state.board[r][c] === 0) continue;
+        const cluster = floodCluster(state, r, c);
+        cluster.forEach((cell) => seen.add(`${cell.r},${cell.c}`));
+        if (cluster.length >= D.params.mergeMinCluster) return true;
+      }
     }
     return false;
   }
@@ -206,7 +242,11 @@ const DiceMergeState = (() => {
     state.queue.shift();
     state.queue.push(D.generatePiece(state.rng));
 
-    if (!hasAnyValidPlacement(state)) {
+    // Losing means the board filled up with nothing left to merge —
+    // never "the piece you were dealt doesn't fit." A piece (or both
+    // queued pieces) having nowhere to go is surfaced to the player as
+    // a UI flag instead (see queuePlaceability in main.js), not a loss.
+    if (isBoardFull(state) && !hasPendingMerge(state)) {
       state.gameOver = true;
     }
 
@@ -226,6 +266,9 @@ const DiceMergeState = (() => {
     shapeCellsAt,
     canPlaceAt,
     hasAnyValidPlacement,
+    queuePlaceability,
+    isBoardFull,
+    hasPendingMerge,
     inBounds,
   };
 })();
