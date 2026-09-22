@@ -80,13 +80,20 @@ const DiceMergeRender = (() => {
   function renderBoard(boardEl, state, options = {}) {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', state.config.boardSize);
-    const justMerged = new Set(state.lastMerges.map((m) => `${m.r},${m.c}`));
+    // Gravity's own merges (see S.applyGravity) aren't part of the wave
+    // animation — they never appear in the synthetic { lastMerges }
+    // objects main.js's wave player renders mid-cascade, only on the
+    // real state object once the board has fully settled — but they
+    // still get folded in here so they get the same merge-pop flash on
+    // that final render, instead of silently popping into place.
+    const allMerges = [...state.lastMerges, ...(state.lastGravityMerges || [])];
+    const justMerged = new Set(allMerges.map((m) => `${m.r},${m.c}`));
     const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
     // The mass released by the merge (see D.resolveClusterMass) drives
     // how hard the merge-pop impact hits — a bigger release visibly
     // lands with more force, the same quantity that fed the score.
     const impactByKey = new Map(
-      state.lastMerges.map((m) => [`${m.r},${m.c}`, m.massReleased])
+      allMerges.map((m) => [`${m.r},${m.c}`, m.massReleased])
     );
 
     state.board.forEach((row, r) => {

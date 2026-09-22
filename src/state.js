@@ -32,6 +32,7 @@ const DiceMergeState = (() => {
       moves: 0,
       gameOver: false,
       lastMerges: [],
+      lastGravityMerges: [],
       rng,
     };
   }
@@ -186,6 +187,82 @@ const DiceMergeState = (() => {
     return { scoreGained, merges };
   }
 
+  // Each direction as the (dr, dc) every die tries to move toward.
+  const GRAVITY_VECTORS = {
+    up: { dr: -1, dc: 0 },
+    down: { dr: 1, dc: 0 },
+    left: { dr: 0, dc: -1 },
+    right: { dr: 0, dc: 1 },
+  };
+
+  // Slides every die on the board as far as it can go toward
+  // `direction`, independently per row or column — the same "gravity"
+  // a falling-block or match-3 board has, just usable in any of the 4
+  // cardinal directions instead of always down. Each line's dice keep
+  // their relative order, they just pack against the near edge with
+  // every gap squeezed to the far edge. Returns whether anything
+  // actually moved, so applyGravity knows when a further pass is a
+  // no-op rather than always looping a fixed number of times.
+  function shiftBoard(state, direction) {
+    const { dr, dc } = GRAVITY_VECTORS[direction];
+    const size = state.config.boardSize;
+    let moved = false;
+    const vertical = dc === 0;
+    for (let i = 0; i < size; i++) {
+      const values = [];
+      for (let j = 0; j < size; j++) {
+        const value = vertical ? state.board[j][i] : state.board[i][j];
+        if (value !== 0) values.push(value);
+      }
+      const packed = Array(size).fill(0);
+      const towardStart = vertical ? dr < 0 : dc < 0;
+      const start = towardStart ? 0 : size - values.length;
+      values.forEach((v, k) => { packed[start + k] = v; });
+      for (let j = 0; j < size; j++) {
+        if (vertical) {
+          if (state.board[j][i] !== packed[j]) moved = true;
+          state.board[j][i] = packed[j];
+        } else {
+          if (state.board[i][j] !== packed[j]) moved = true;
+          state.board[i][j] = packed[j];
+        }
+      }
+    }
+    return moved;
+  }
+
+  // A constant directional pull, nothing more: shift everything toward
+  // the configured edge, then resolve whatever clusters that shift just
+  // brought into contact (dice that weren't touching before can be
+  // touching now). A resolved merge leaves a fresh gap behind it, so
+  // shift-then-merge repeats until a whole pass changes nothing —
+  // bounded defensively (mirrors CULL_MAX_ATTEMPTS' style below) even
+  // though a real board can't actually loop that long: every merge
+  // strictly shrinks the occupied-cell count, and a board that's fully
+  // packed against the gravity edge has nothing left to shift.
+  const GRAVITY_MAX_PASSES = 200;
+  function applyGravity(state) {
+    if (!D.params.gravityEnabled) return { scoreGained: 0, merges: [] };
+    const direction = D.params.gravityDirection;
+    const size = state.config.boardSize;
+    let scoreGained = 0;
+    const merges = [];
+    for (let pass = 0; pass < GRAVITY_MAX_PASSES; pass++) {
+      const moved = shiftBoard(state, direction);
+      const seeds = [];
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          if (state.board[r][c] !== 0) seeds.push([r, c]);
+        }
+      }
+      const result = resolveMerges(state, seeds);
+      scoreGained += result.scoreGained;
+      merges.push(...result.merges);
+      if (!moved && result.merges.length === 0) break;
+    }
+    return { scoreGained, merges };
+  }
+
   // Shuffles in place with the game's own rng, so which of several
   // equally-valid seed cells "wins" a merge is a deliberate coin flip
   // recorded by the same random stream as everything else, rather than
@@ -255,6 +332,20 @@ const DiceMergeState = (() => {
     state.lastMerges = merges;
     state.moves += 1;
 
+    // Gravity (if on) settles the board after the placement's own
+    // merges have already resolved — it gets its own merge list rather
+    // than folding into `lastMerges` above, because the renderer's wave
+    // animation walks a locally-reconstructed copy of the board that
+    // only knows about the piece just placed (see commitPlacement in
+    // main.js); teaching it about an arbitrary board-wide shift too
+    // would be exactly the "more complicated" this feature was asked
+    // not to be. Gravity's own merges still get their score and still
+    // get a plain merge-pop flash (see renderBoard) — they just don't
+    // get the fly-together cascade animation placement merges do.
+    const gravityResult = applyGravity(state);
+    state.score += gravityResult.scoreGained;
+    state.lastGravityMerges = gravityResult.merges;
+
     state.queue.shift();
     state.queue.push(D.generatePiece(state.rng));
 
@@ -287,6 +378,8 @@ const DiceMergeState = (() => {
     cullUnplaceablePieces,
     isBoardFull,
     hasPendingMerge,
+    shiftBoard,
+    applyGravity,
     inBounds,
   };
 })();

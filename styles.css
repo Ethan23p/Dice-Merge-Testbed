@@ -622,6 +622,16 @@ body {
   accent-color: var(--accent);
 }
 
+.config-row-control select {
+  flex: 1 1 auto;
+  background: #1e1e1e;
+  color: var(--text);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 /* Bool-item control: same switch look as .pin-toggle, but bigger since
    it's the row's primary control (the slider's replacement) rather
    than a secondary one. Sits flex: 1 1 auto so its track fills the

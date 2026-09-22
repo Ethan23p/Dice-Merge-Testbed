@@ -102,6 +102,7 @@
       moves: g.moves || 0,
       gameOver: !!g.gameOver,
       lastMerges: [],
+      lastGravityMerges: [],
       rng: Math.random,
     };
   }
@@ -758,6 +759,7 @@
 
   function formatValue(item, value) {
     if (item.type === 'bool') return value ? 'On' : 'Off';
+    if (item.type === 'select') return item.options.find((o) => o.value === value)?.label ?? String(value);
     return `${value.toFixed(decimalsFor(item.step))}${item.unit}`;
   }
 
@@ -852,6 +854,20 @@
         syncValueDisplays(item.id);
       });
       control.appendChild(bool.label);
+    } else if (item.type === 'select') {
+      input = document.createElement('select');
+      item.options.forEach((opt) => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        input.appendChild(option);
+      });
+      input.value = String(CFG.get(item.id));
+      input.addEventListener('change', () => {
+        CFG.set(item.id, input.value);
+        syncValueDisplays(item.id);
+      });
+      control.appendChild(input);
     } else {
       input = document.createElement('input');
       input.type = 'range';
@@ -868,7 +884,7 @@
     control.appendChild(buildPinToggle(item, scope));
     row.appendChild(control);
 
-    if (!compact && item.type !== 'bool') {
+    if (!compact && item.type !== 'bool' && item.type !== 'select') {
       const bounds = document.createElement('div');
       bounds.className = 'config-row-bounds';
       const lo = document.createElement('span');

@@ -59,6 +59,9 @@ const DiceMergeData = (() => {
     spawnTemperature: 2, // higher = flatter spawn-rarity curve
     spawnValuePool: 8, // highest value ever rolled for as a spawn
     noRepeatInCluster: false, // a multi-cell piece's own dice can't share a value
+    forcePairInTriple: false, // a 3-cell piece always has exactly one repeated pair
+    gravityEnabled: false, // board settles toward gravityDirection after every placement
+    gravityDirection: 'down', // 'up' | 'down' | 'left' | 'right'
   };
 
   // Every die value stands for a "mass" that grows per tier — used for
@@ -184,25 +187,52 @@ const DiceMergeData = (() => {
     return PIECE_SIZE_WEIGHTS[0].size;
   }
 
+  // Only meaningful for a 3-cell piece: picks values for its three dice
+  // so exactly one pair matches and the third die is guaranteed
+  // different (rollSpawnValueExcluding, not another plain roll — an
+  // unlucky plain roll could land on the pair's own value and turn it
+  // into a triple, which isn't "a single repeated value" anymore).
+  // Which of the three slots is the odd one out is itself random.
+  function rollTriplePairValues(rng = Math.random) {
+    const pairValue = rollSpawnValue(rng);
+    const oddValue = rollSpawnValueExcluding(new Set([pairValue]), rng);
+    const oddSlot = Math.floor(rng() * 3);
+    return [0, 1, 2].map((i) => (i === oddSlot ? oddValue : pairValue));
+  }
+
   // A piece is { cells: [{ dr, dc, value }, ...] } — a small polyomino
   // whose cells are shuffled independently: each rolls its own value
   // off the same spawn curve as a lone die (rollSpawnValue), rather
   // than the whole piece sharing one roll. Shape (where it sits) and
   // value (what each cell is made of) are independent axes — unless
   // params.noRepeatInCluster is on, in which case each cell's roll
-  // excludes values already used elsewhere in this same piece.
+  // excludes values already used elsewhere in this same piece, or
+  // params.forcePairInTriple is on for a 3-cell piece, in which case
+  // the piece is built from rollTriplePairValues instead. The two are
+  // mutually exclusive by construction (a 3-cell piece can't be both
+  // all-different and forced to repeat), so noRepeatInCluster wins —
+  // it's the more restrictive rule, and the one the player toggled
+  // first if both happen to be on.
   function generatePiece(rng = Math.random) {
     const size = rollPieceSize(rng);
     const shapes = SHAPE_LIBRARY[size];
     const shape = shapes[Math.floor(rng() * shapes.length)];
-    const used = new Set();
-    const cells = shape.map(([dr, dc]) => {
-      const value = params.noRepeatInCluster
-        ? rollSpawnValueExcluding(used, rng)
-        : rollSpawnValue(rng);
-      used.add(value);
-      return { dr, dc, value };
-    });
+
+    let values;
+    if (size === 3 && params.forcePairInTriple && !params.noRepeatInCluster) {
+      values = rollTriplePairValues(rng);
+    } else {
+      const used = new Set();
+      values = shape.map(() => {
+        const value = params.noRepeatInCluster
+          ? rollSpawnValueExcluding(used, rng)
+          : rollSpawnValue(rng);
+        used.add(value);
+        return value;
+      });
+    }
+
+    const cells = shape.map(([dr, dc], i) => ({ dr, dc, value: values[i] }));
     return { cells };
   }
 
@@ -248,6 +278,7 @@ const DiceMergeData = (() => {
     spawnWeight,
     rollSpawnValue,
     rollSpawnValueExcluding,
+    rollTriplePairValues,
     massForValue,
     resolveClusterMass,
     scaleWithMass,
