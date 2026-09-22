@@ -208,18 +208,21 @@ const DiceMergeData = (() => {
   // params.noRepeatInCluster is on, in which case each cell's roll
   // excludes values already used elsewhere in this same piece, or
   // params.forcePairInTriple is on for a 3-cell piece, in which case
-  // the piece is built from rollTriplePairValues instead. The two are
-  // mutually exclusive by construction (a 3-cell piece can't be both
-  // all-different and forced to repeat), so noRepeatInCluster wins —
-  // it's the more restrictive rule, and the one the player toggled
-  // first if both happen to be on.
+  // the piece is built from rollTriplePairValues instead and
+  // noRepeatInCluster is bypassed for that piece entirely — the two
+  // rules are mutually exclusive for a 3-cell piece (it can't be both
+  // all-different and forced to repeat), and forcePairInTriple is the
+  // one scoped to exactly that size, so it takes priority there. This
+  // is what lets both run together as a deliberate combo: forced-pair
+  // triples alongside noRepeatInCluster still governing every 1- and
+  // 2-cell piece as usual.
   function generatePiece(rng = Math.random) {
     const size = rollPieceSize(rng);
     const shapes = SHAPE_LIBRARY[size];
     const shape = shapes[Math.floor(rng() * shapes.length)];
 
     let values;
-    if (size === 3 && params.forcePairInTriple && !params.noRepeatInCluster) {
+    if (size === 3 && params.forcePairInTriple) {
       values = rollTriplePairValues(rng);
     } else {
       const used = new Set();

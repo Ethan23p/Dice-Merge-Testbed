@@ -86,9 +86,10 @@ const DiceMergeConfig = (() => {
     { id: 'pieceWeight3', group: 'Balance & Spawn', label: 'Piece-size weight: 3-cell', unit: '', initial: 25, min: 0, max: 1000, step: 1, apply: { type: 'pieceWeight', index: 2 } },
     { id: 'mergeMinCluster', group: 'Balance & Spawn', label: 'Merge threshold (dice needed)', unit: '', initial: 3, min: 2, max: 20, step: 1, apply: { type: 'data', key: 'mergeMinCluster' } },
     { id: 'noRepeatInCluster', group: 'Balance & Spawn', label: 'No repeat die value in a piece', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'noRepeatInCluster' } },
-    // noRepeatInCluster wins when both are on — see generatePiece in
-    // data.js for why (a 3-cell piece can't be all-different and
-    // forced-to-repeat at once).
+    // forcePairInTriple takes priority over noRepeatInCluster for
+    // 3-cell pieces specifically (see generatePiece in data.js) — the
+    // combo this enables is forced-pair triples alongside still-unique
+    // 1- and 2-cell pieces, both on at once.
     { id: 'forcePairInTriple', group: 'Balance & Spawn', label: '3-cell pieces: force one repeated pair', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'forcePairInTriple' } },
 
     // --- Gravity ---
