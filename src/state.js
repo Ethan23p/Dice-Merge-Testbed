@@ -55,11 +55,10 @@ const DiceMergeState = (() => {
 
   // Is there any (rotation, anchor) combination that fits `piece`
   // somewhere on the board? Defaults to the queue head, but takes any
-  // piece so the UI can also ask this about the on-deck piece (see
-  // queuePlaceability) without it ever affecting game over — a piece
-  // with nowhere to go is not itself a loss condition (see
-  // isBoardFull/hasPendingMerge below), just something worth flagging
-  // before the player tries to drag it.
+  // piece so cullUnplaceablePieces can also ask this about a candidate
+  // replacement piece — a piece with nowhere to go is never itself a
+  // loss condition (see isBoardFull/hasPendingMerge below), just
+  // something that gets swapped out before the player ever sees it.
   function hasAnyValidPlacement(state, piece = state.queue[0]) {
     const size = state.config.boardSize;
     let variant = piece;
@@ -72,12 +71,6 @@ const DiceMergeState = (() => {
       variant = D.rotatePiece(variant);
     }
     return false;
-  }
-
-  // One entry per queue slot: can that piece (in some rotation) be
-  // placed anywhere right now? Purely informational for the UI.
-  function queuePlaceability(state) {
-    return state.queue.map((piece) => hasAnyValidPlacement(state, piece));
   }
 
   function isBoardFull(state) {
@@ -206,6 +199,29 @@ const DiceMergeState = (() => {
     return arr;
   }
 
+  // A piece with nowhere to go (in any rotation) never sits in the
+  // queue waiting to be dealt with — it's silently swapped for a
+  // freshly generated replacement instead, so the player is never
+  // stuck holding something structurally unplaceable. Retried a bounded
+  // number of times against the normal weighted generator; as long as
+  // the board has any empty cell at all (guaranteed by only calling
+  // this once game over has been ruled out — see placePiece), a lone
+  // die always fits somewhere, so the guaranteed-fit fallback below
+  // only ever matters if the weight table itself has been tuned to
+  // never spawn one.
+  const CULL_MAX_ATTEMPTS = 200;
+  function cullUnplaceablePieces(state) {
+    state.queue = state.queue.map((piece) => {
+      if (hasAnyValidPlacement(state, piece)) return piece;
+      for (let i = 0; i < CULL_MAX_ATTEMPTS; i++) {
+        const candidate = D.generatePiece(state.rng);
+        if (hasAnyValidPlacement(state, candidate)) return candidate;
+      }
+      return { cells: [{ dr: 0, dc: 0, value: D.rollSpawnValue(state.rng) }] };
+    });
+    return state;
+  }
+
   // `selected` (optional, absolute {r, c}) is the cell the player was
   // actually holding when they dropped the piece. Merge seeds are
   // checked in order and whichever seed is checked first "wins" a
@@ -244,10 +260,12 @@ const DiceMergeState = (() => {
 
     // Losing means the board filled up with nothing left to merge —
     // never "the piece you were dealt doesn't fit." A piece (or both
-    // queued pieces) having nowhere to go is surfaced to the player as
-    // a UI flag instead (see queuePlaceability in main.js), not a loss.
+    // queued pieces) having nowhere to go is handled by replacing it
+    // (see cullUnplaceablePieces), not by ending the game.
     if (isBoardFull(state) && !hasPendingMerge(state)) {
       state.gameOver = true;
+    } else {
+      cullUnplaceablePieces(state);
     }
 
     return state;
@@ -266,7 +284,7 @@ const DiceMergeState = (() => {
     shapeCellsAt,
     canPlaceAt,
     hasAnyValidPlacement,
-    queuePlaceability,
+    cullUnplaceablePieces,
     isBoardFull,
     hasPendingMerge,
     inBounds,

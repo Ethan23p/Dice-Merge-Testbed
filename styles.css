@@ -295,16 +295,6 @@ body {
   opacity: 0.75;
 }
 
-/* A piece with nowhere to land right now, in any rotation (see
-   DiceMergeState.queuePlaceability) — flagged rather than treated as a
-   loss: dimmed and desaturated so it reads as temporarily inert, not
-   as an error. Comes after .piece--next so it wins the shared
-   `opacity` property when the on-deck piece is both next and stuck. */
-.piece--unplaceable {
-  opacity: 0.4;
-  filter: grayscale(0.85);
-}
-
 .die--current {
   box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.5);
 }

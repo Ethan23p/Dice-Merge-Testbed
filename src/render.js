@@ -112,23 +112,13 @@ const DiceMergeRender = (() => {
     });
   }
 
-  // `options.unplaceable` is a parallel array to state.queue (see
-  // DiceMergeState.queuePlaceability) — this file only paints the flag,
-  // the actual "can it go anywhere" rule lives in state.js.
-  function renderQueue(currentSlotEl, nextSlotEl, state, options = {}) {
-    const unplaceable = options.unplaceable || [];
+  function renderQueue(currentSlotEl, nextSlotEl, state) {
     currentSlotEl.innerHTML = '';
-    const currentNode = buildPieceNode(state.queue[0], 'current');
-    if (unplaceable[0]) currentNode.classList.add('piece--unplaceable');
-    currentSlotEl.appendChild(currentNode);
+    currentSlotEl.appendChild(buildPieceNode(state.queue[0], 'current'));
     nextSlotEl.innerHTML = '';
     // Guards a shorter-than-2 queue (config.queueLength isn't actually
     // exposed anywhere today, but nothing enforces that it stays 2).
-    if (state.queue[1]) {
-      const nextNode = buildPieceNode(state.queue[1], 'next');
-      if (unplaceable[1]) nextNode.classList.add('piece--unplaceable');
-      nextSlotEl.appendChild(nextNode);
-    }
+    if (state.queue[1]) nextSlotEl.appendChild(buildPieceNode(state.queue[1], 'next'));
   }
 
   function renderScore(scoreEl, state) {

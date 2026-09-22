@@ -114,16 +114,9 @@
   let bestScore = saved.bestScore || 0;
   let state = restoredState(saved, config) || S.createState(config);
 
-  // Recomputed on every queue render — checking all 4 rotations against
-  // the whole board is cheap at these board sizes, and this has to stay
-  // correct after every placement/merge/new-game, not just be set once.
-  function queueUnplaceable() {
-    return S.queuePlaceability(state).map((placeable) => !placeable);
-  }
-
   function render(boardOptions = {}) {
     R.renderBoard(boardEl, state, boardOptions);
-    R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
     // Only this general render path means "a piece genuinely entered
     // the slot" (a new game, or the next piece moving up after a
     // placement) — rotation redraws the same piece by calling
@@ -214,7 +207,7 @@
       { config: state.config, board: workingBoard, lastMerges: [] },
       { targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
     );
-    R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
 
     // The placed piece has no landing animation to wait out, so the
@@ -391,7 +384,7 @@
     if (oldPiece.cells.length === 1) {
       S.rotateQueueHead(state);
       persistGameState();
-      R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
+      R.renderQueue(currentPieceEl, nextPieceEl, state);
       const dieEl = currentPieceEl.querySelector('.piece .die');
       if (dieEl) {
         dieEl.classList.remove('die--spin');
@@ -415,7 +408,7 @@
     rotateSettling = true;
     S.rotateQueueHead(state);
     persistGameState();
-    R.renderQueue(currentPieceEl, nextPieceEl, state, { unplaceable: queueUnplaceable() });
+    R.renderQueue(currentPieceEl, nextPieceEl, state);
 
     const newPieceEl = currentPieceEl.querySelector('.piece');
     const animatedDies = [];
