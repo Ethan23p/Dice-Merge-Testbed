@@ -45,29 +45,106 @@ const DiceMergeData = (() => {
     return PIP_LAYOUTS[value] || null;
   }
 
-  // Relative weights, not percentages — rollSpawnValue normalizes.
-  const SPAWN_TABLE = [
-    { value: 1, weight: 55 },
-    { value: 2, weight: 30 },
-    { value: 3, weight: 15 },
-  ];
+  // Balance knobs that the config panel (see config.js) can retune
+  // live. Read through `params.X` at call time everywhere below,
+  // rather than closed-over constants, so a panel change takes effect
+  // on the very next roll/merge — no reload needed. This object's
+  // starting values ARE the "initial" values recorded in config.js's
+  // schema; keep the two in sync if either changes.
+  const params = {
+    massBase: 2, // mass(value) = massBase ** (value - 1)
+    massExponent: 0.5, // scaleWithMass(base, mass) = base * mass ** massExponent
+    scoreMultiplier: 10, // score = massReleased * scoreMultiplier
+    mergeMinCluster: 3, // dice needed, same-value and touching, to merge
+    spawnTemperature: 2, // higher = flatter spawn-rarity curve
+    spawnValuePool: 8, // highest value ever rolled for as a spawn
+    noRepeatInCluster: false, // a multi-cell piece's own dice can't share a value
+  };
 
-  function rollSpawnValue(rng = Math.random) {
-    const total = SPAWN_TABLE.reduce((sum, entry) => sum + entry.weight, 0);
-    let roll = rng() * total;
-    for (const entry of SPAWN_TABLE) {
-      if (roll < entry.weight) return entry.value;
-      roll -= entry.weight;
-    }
-    return SPAWN_TABLE[0].value;
+  // Every die value stands for a "mass" that grows per tier — used for
+  // scoring and animation weight (a heavier die drops/impacts harder),
+  // not for deciding what a merge turns into. With the default base of
+  // 2 this doubles per tier: mass(1)=1, mass(2)=2, mass(3)=4, ...
+  function massForValue(value) {
+    return params.massBase ** (value - 1);
   }
 
-  // A cluster of 3+ same-value dice merges into one die of value+1.
-  // Bigger clusters and higher values are worth more.
-  const MERGE_MIN_CLUSTER = 3;
+  // 3+ same-value dice reaching critical mass together (a fusion
+  // threshold, not a value threshold) is what triggers a merge at all.
+  // Clamped at 0: massBase and mergeMinCluster are tuned independently
+  // (see config.js), and a large base with a small cluster threshold
+  // can otherwise make massForValue(value)*clusterSize fall short of
+  // massForValue(newValue) — merging should never cost score, whatever
+  // those two knobs are set to.
+  function resolveClusterMass(value, clusterSize) {
+    const newValue = value + 1;
+    const massReleased = Math.max(0, massForValue(value) * clusterSize - massForValue(newValue));
+    return { newValue, massReleased, score: massReleased * params.scoreMultiplier };
+  }
 
-  function scoreForMerge(newValue, clusterSize) {
-    return newValue * clusterSize * 2;
+  // What spawns is governed by the same mass law, not a separate hand-
+  // picked table: heavier values are exponentially rarer, the way
+  // higher-energy states are in a Boltzmann distribution — one
+  // temperature constant sets how sharply rarity falls off with mass,
+  // rather than a percentage being chosen per value. The default
+  // temperature of 2 reproduces roughly the old hand-tuned 55/30/15
+  // split for values 1-3, but — because it's a real curve rather than
+  // a lookup table with a hard edge — it also lets a rare 4 or 5 spawn
+  // instead of never happening at all above the old table's top entry.
+  function spawnWeight(value) {
+    return Math.exp(-massForValue(value) / params.spawnTemperature);
+  }
+
+  function rollSpawnValue(rng = Math.random) {
+    const weights = [];
+    let total = 0;
+    for (let value = 1; value <= params.spawnValuePool; value++) {
+      const w = spawnWeight(value);
+      weights.push(w);
+      total += w;
+    }
+    let roll = rng() * total;
+    for (let i = 0; i < weights.length; i++) {
+      if (roll < weights[i]) return i + 1;
+      roll -= weights[i];
+    }
+    return 1;
+  }
+
+  // Same weighted roll as rollSpawnValue, but excluding a set of
+  // already-used values — used by generatePiece when noRepeatInCluster
+  // is on. Falls back to an ordinary (possibly repeating) roll once the
+  // exclusion set covers the whole spawn pool, so a tiny pool combined
+  // with a big piece never hangs looking for a value that can't exist.
+  function rollSpawnValueExcluding(exclude, rng = Math.random) {
+    const values = [];
+    const weights = [];
+    let total = 0;
+    for (let value = 1; value <= params.spawnValuePool; value++) {
+      if (exclude.has(value)) continue;
+      values.push(value);
+      weights.push(spawnWeight(value));
+      total += weights[weights.length - 1];
+    }
+    if (values.length === 0) return rollSpawnValue(rng);
+    let roll = rng() * total;
+    for (let i = 0; i < weights.length; i++) {
+      if (roll < weights[i]) return values[i];
+      roll -= weights[i];
+    }
+    return values[values.length - 1];
+  }
+
+  // Real materials take longer to settle the more massive they are — a
+  // spring's natural period scales with mass**massExponent/stiffness —
+  // so any animation whose length or intensity should reflect "how
+  // much mass is involved" scales through this one function instead of
+  // each spot picking its own per-tier multiplier. At mass=1 this is a
+  // no-op (returns `base` unchanged), so the lightest die reproduces
+  // exactly whatever baseline feel `base` was tuned for. Default
+  // exponent is 0.5 (square root).
+  function scaleWithMass(base, mass) {
+    return base * mass ** params.massExponent;
   }
 
   // Piece shapes: relative (dr, dc) offsets, normalized so the
@@ -108,13 +185,34 @@ const DiceMergeData = (() => {
   }
 
   // A piece is { cells: [{ dr, dc, value }, ...] } — a small polyomino
-  // with an independent random value on each cell.
+  // whose cells are shuffled independently: each rolls its own value
+  // off the same spawn curve as a lone die (rollSpawnValue), rather
+  // than the whole piece sharing one roll. Shape (where it sits) and
+  // value (what each cell is made of) are independent axes — unless
+  // params.noRepeatInCluster is on, in which case each cell's roll
+  // excludes values already used elsewhere in this same piece.
   function generatePiece(rng = Math.random) {
     const size = rollPieceSize(rng);
     const shapes = SHAPE_LIBRARY[size];
     const shape = shapes[Math.floor(rng() * shapes.length)];
-    const cells = shape.map(([dr, dc]) => ({ dr, dc, value: rollSpawnValue(rng) }));
+    const used = new Set();
+    const cells = shape.map(([dr, dc]) => {
+      const value = params.noRepeatInCluster
+        ? rollSpawnValueExcluding(used, rng)
+        : rollSpawnValue(rng);
+      used.add(value);
+      return { dr, dc, value };
+    });
     return { cells };
+  }
+
+  // A piece's total mass, for physics/animation feel (snapback weight,
+  // rotate duration, reject-shake strength) — the sum of each cell's
+  // own mass, since a piece's cells can each hold a different value
+  // (see generatePiece) and a real multi-part object's mass is the sum
+  // of its parts, not just whichever part you'd ask first.
+  function pieceMass(piece) {
+    return piece.cells.reduce((sum, cell) => sum + massForValue(cell.value), 0);
   }
 
   // Rotates a piece 90° clockwise and re-normalizes so it keeps a
@@ -146,14 +244,18 @@ const DiceMergeData = (() => {
     BASE_PALETTE,
     colorForValue,
     pipLayoutForValue,
-    SPAWN_TABLE,
+    params,
+    spawnWeight,
     rollSpawnValue,
-    MERGE_MIN_CLUSTER,
-    scoreForMerge,
+    rollSpawnValueExcluding,
+    massForValue,
+    resolveClusterMass,
+    scaleWithMass,
     SHAPE_LIBRARY,
     PIECE_SIZE_WEIGHTS,
     rollPieceSize,
     generatePiece,
+    pieceMass,
     rotatePiece,
     DEFAULT_CONFIG,
     BOARD_SIZE_OPTIONS,

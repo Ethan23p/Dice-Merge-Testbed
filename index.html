@@ -13,7 +13,9 @@
       <div class="best" id="best-score">Best 0</div>
     </header>
 
-    <div class="board" id="board" role="grid" aria-label="Dice board"></div>
+    <div class="board-shell">
+      <div class="board" id="board" role="grid" aria-label="Dice board"></div>
+    </div>
 
     <div class="queue-panel" aria-label="Upcoming pieces">
       <span class="queue-label">Drag to place · tap to rotate</span>
@@ -22,13 +24,16 @@
     </div>
 
     <footer class="toolbar">
-      <button class="icon-button" id="new-game-btn" type="button">
+      <button class="icon-button" id="config-toggle-btn" type="button" aria-label="Tuning panel">
         <span class="icon-circle">
-          <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+            <path d="M4 6h10M17 6h3M4 12h3M9 12h11M4 18h13M20 18h0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="14" cy="6" r="2.2" fill="currentColor"/>
+            <circle cx="6" cy="12" r="2.2" fill="currentColor"/>
+            <circle cx="16.5" cy="18" r="2.2" fill="currentColor"/>
           </svg>
         </span>
-        <span class="icon-label">New Game</span>
+        <span class="icon-label">Tuning</span>
       </button>
 
       <button class="icon-button" id="settings-btn" type="button">
@@ -42,6 +47,11 @@
     </footer>
   </main>
 
+  <!-- Pinned config rows float over the game, anchored to the bottom,
+       growing upward, bounded so they can never reach the staging area
+       or board no matter how many are pinned (see .pinned-config). -->
+  <div class="pinned-config" id="pinned-config" hidden></div>
+
   <dialog class="settings-dialog" id="settings-dialog">
     <h2>Settings</h2>
     <label class="settings-row">
@@ -49,7 +59,8 @@
       <select id="board-size-select"></select>
     </label>
     <p class="settings-hint">Changing board size starts a new game.</p>
-    <button class="dialog-close" id="close-settings-btn" type="button">Close</button>
+    <button class="dialog-close" id="new-game-btn" type="button">New Game</button>
+    <button class="dialog-close dialog-close--ghost" id="close-settings-btn" type="button">Close</button>
   </dialog>
 
   <div class="game-over" id="game-over" hidden>
@@ -60,9 +71,36 @@
     </div>
   </div>
 
+  <!-- Full-screen tuning panel. Body is a flat scrollable list of every
+       config row; the island up top holds every action button (global
+       and pinned-only) — rows themselves carry no buttons but their
+       own pin toggle. -->
+  <div class="config-panel" id="config-panel" hidden>
+    <div class="config-island" id="config-island">
+      <div class="config-island-group">
+        <span class="config-island-label">All</span>
+        <button class="config-btn" id="cfg-set-all-default" type="button">Set current as default</button>
+        <button class="config-btn" id="cfg-reset-all-initial" type="button">Reset to initial</button>
+        <button class="config-btn" id="cfg-reset-all-default" type="button">Reset to default</button>
+      </div>
+      <div class="config-island-group">
+        <span class="config-island-label">Pinned only</span>
+        <button class="config-btn" id="cfg-set-pinned-default" type="button">Set current as default</button>
+        <button class="config-btn" id="cfg-reset-pinned-initial" type="button">Reset to initial</button>
+        <button class="config-btn" id="cfg-reset-pinned-default" type="button">Reset to default</button>
+      </div>
+      <div class="config-island-group">
+        <button class="config-btn" id="config-export-btn" type="button">Export config</button>
+      </div>
+    </div>
+    <div class="config-body" id="config-body"></div>
+  </div>
+
   <script src="src/data.js"></script>
+  <script src="src/config.js"></script>
   <script src="src/state.js"></script>
   <script src="src/render.js"></script>
+  <script src="src/physics.js"></script>
   <script src="src/main.js"></script>
 </body>
 </html>

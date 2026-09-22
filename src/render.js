@@ -68,9 +68,10 @@ const DiceMergeRender = (() => {
   // Board cells are plain, non-interactive tiles — placement now
   // happens by dragging the current piece over the board (see main.js),
   // so a cell only needs to display its die and expose its coordinates
-  // for the drag controller's hit-testing.
+  // for the drag controller's hit-testing. A placed die just appears —
+  // no landing animation — so the moment of release reads as directly
+  // placing the piece rather than watching it land first.
   //
-  // `options.placedCells` marks freshly placed dice (pop-in entrance).
   // `options.targetCells` marks the cell(s) a forming merge will
   // converge on, so main.js's merge animation can highlight where the
   // consumed dice are about to fly to. The actual fly-together motion
@@ -80,8 +81,13 @@ const DiceMergeRender = (() => {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', state.config.boardSize);
     const justMerged = new Set(state.lastMerges.map((m) => `${m.r},${m.c}`));
-    const justPlaced = new Set((options.placedCells || []).map((c) => `${c.r},${c.c}`));
     const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
+    // The mass released by the merge (see D.resolveClusterMass) drives
+    // how hard the merge-pop impact hits — a bigger release visibly
+    // lands with more force, the same quantity that fed the score.
+    const impactByKey = new Map(
+      state.lastMerges.map((m) => [`${m.r},${m.c}`, m.massReleased])
+    );
 
     state.board.forEach((row, r) => {
       row.forEach((value, c) => {
@@ -94,8 +100,10 @@ const DiceMergeRender = (() => {
         if (value) {
           const key = `${r},${c}`;
           const die = buildDieNode(value, 'board');
-          if (justMerged.has(key)) die.classList.add('die--merge-pop');
-          else if (justPlaced.has(key)) die.classList.add('die--place-pop');
+          if (justMerged.has(key)) {
+            die.classList.add('die--merge-pop');
+            die.style.setProperty('--merge-impact', String(impactByKey.get(key)));
+          }
           if (targets.has(key)) die.classList.add('die--merge-target');
           cell.appendChild(die);
         }
@@ -108,7 +116,9 @@ const DiceMergeRender = (() => {
     currentSlotEl.innerHTML = '';
     currentSlotEl.appendChild(buildPieceNode(state.queue[0], 'current'));
     nextSlotEl.innerHTML = '';
-    nextSlotEl.appendChild(buildPieceNode(state.queue[1], 'next'));
+    // Guards a shorter-than-2 queue (config.queueLength isn't actually
+    // exposed anywhere today, but nothing enforces that it stays 2).
+    if (state.queue[1]) nextSlotEl.appendChild(buildPieceNode(state.queue[1], 'next'));
   }
 
   function renderScore(scoreEl, state) {

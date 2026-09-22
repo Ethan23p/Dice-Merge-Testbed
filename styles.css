@@ -7,6 +7,21 @@
   --text: #f2f2f2;
   --text-dim: #9a9a9a;
   --die-radius: 12px;
+  /* Every non-board measurement below is sized off viewport height
+     (dvh), the same budget .board-shell competes for, and capped with
+     a small px floor/ceiling — never a bare px value. That's what
+     makes the board "win": on a short viewport these shrink together
+     with it instead of holding a fixed footprint that eats the
+     board's share. See the comment on .board-shell.
+
+     --queue-die is the exception to "shrink as far as it wants": it's
+     the piece the player actually drags, so its floor is a real touch
+     target (~44px, the iOS/Android minimum) rather than a cosmetic
+     minimum — a die you can't reliably grab is a functional bug, not
+     just a smaller visual. --queue-die-next is purely a preview (never
+     touched), so it keeps a cosmetic floor. */
+  --queue-die: clamp(44px, 3.6dvh, 56px);
+  --queue-die-next: clamp(12px, 2.4dvh, 32px);
 }
 
 * {
@@ -17,6 +32,9 @@ html, body {
   height: 100%;
   margin: 0;
   overscroll-behavior: none;
+  /* The layout below is designed to always fit within the viewport —
+     nothing here should ever need to scroll. */
+  overflow: hidden;
 }
 
 body {
@@ -31,21 +49,44 @@ body {
 .app {
   width: 100%;
   max-width: 480px;
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: max(24px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
-  gap: 24px;
+  padding: max(8px, env(safe-area-inset-top)) 16px max(8px, env(safe-area-inset-bottom));
+  gap: clamp(4px, 1.5dvh, 16px);
 }
 
 @media (max-width: 360px) {
   .app {
     padding-left: 12px;
     padding-right: 12px;
-    gap: 18px;
   }
+}
+
+/* Everything except the board takes its natural size; the board is
+   the one flexible element, so it's what shrinks first on a short
+   viewport instead of the page overflowing into a scrollbar. */
+.scoreboard,
+.queue-panel,
+.toolbar {
+  flex: 0 0 auto;
+}
+
+.board-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Establishes a query container so .board's cqh below can size
+     itself off this box's actual available height, not just its
+     width — a plain max-height on an aspect-ratio box clamps height
+     without feeding back into width, which squashes the board into a
+     non-square rectangle instead of shrinking it as a square. */
+  container-type: size;
 }
 
 .scoreboard {
@@ -56,7 +97,7 @@ body {
 }
 
 .score {
-  font-size: clamp(44px, 14vw, 64px);
+  font-size: clamp(24px, min(14vw, 7dvh), 64px);
   font-weight: 800;
   color: var(--accent);
   line-height: 1;
@@ -64,7 +105,7 @@ body {
 }
 
 .best {
-  font-size: 14px;
+  font-size: clamp(11px, 1.8dvh, 14px);
   color: var(--text-dim);
   letter-spacing: 0.02em;
 }
@@ -73,6 +114,10 @@ body {
   --board-size: 5;
   width: 100%;
   max-width: 420px;
+  /* Enhancement over the width:100% fallback above: picks whichever
+     of available width or available height is tighter, so the board
+     always shrinks as a square rather than a squashed rectangle. */
+  width: min(100%, 420px, 100cqh);
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-columns: repeat(var(--board-size), 1fr);
@@ -89,7 +134,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 100ms ease;
+  transition: background var(--cfg-hover-duration, 100ms) ease;
 }
 
 .cell.preview-valid {
@@ -102,63 +147,55 @@ body {
   box-shadow: inset 0 0 0 2px #e8534f;
 }
 
-@keyframes die-place-pop {
-  from { transform: scale(0.55); opacity: 0.4; }
-  60% { transform: scale(1.08); opacity: 1; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-.die--place-pop {
-  animation: die-place-pop 200ms cubic-bezier(.2, .8, .3, 1.3);
-}
-
-/* Consumed cluster dice fly into the surviving cell: main.js computes
-   the pixel offset to travel per-die and sets it as --merge-dx/dy,
-   then adds this class so the transition below carries it there while
-   shrinking and fading out. */
-.die--merge-converge {
-  transition: transform 220ms cubic-bezier(.4, 0, .2, 1), opacity 220ms ease-in;
-  transform: translate(var(--merge-dx, 0px), var(--merge-dy, 0px)) scale(0.25);
-  opacity: 0;
-  position: relative;
-  z-index: 5;
-}
-
+/* The pulse ring size/duration and every number in the merge-pop
+   keyframe below are read from --cfg-* custom properties, each with a
+   fallback matching its shipped value — config.js's panel overwrites
+   them on :root live, so a slider takes effect on the very next merge
+   with no reload. The per-element values (--merge-impact,
+   --reject-strength) are unrelated and stay as-is: those vary per
+   merge/rejection, not per tuning session. */
 @keyframes die-merge-target-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(79, 142, 247, 0.55); }
-  50% { box-shadow: 0 0 0 10px rgba(79, 142, 247, 0); }
+  50% { box-shadow: 0 0 0 var(--cfg-pulse-ring, 10px) rgba(79, 142, 247, 0); }
 }
 
 .die--merge-target {
-  animation: die-merge-target-pulse 220ms ease-out;
+  animation: die-merge-target-pulse var(--cfg-pulse-duration, 220ms) ease-out;
 }
 
-/* Combine explicitly when a die is both freshly placed and the merge's
-   target, so one rule's shorthand doesn't just clobber the other's. */
-.die--place-pop.die--merge-target {
-  animation-name: die-place-pop, die-merge-target-pulse;
-  animation-duration: 200ms, 220ms;
-  animation-timing-function: cubic-bezier(.2, .8, .3, 1.3), ease-out;
-}
-
+/* Impact scales with the mass the merge actually released (see
+   D.resolveClusterMass): render.js sets --merge-impact to that amount,
+   so a minimal 3-of-a-kind (releases 1) gives a light bump while a
+   bigger simultaneous cluster — which releases more mass even though
+   it lands on the same value+1 — visibly hits harder. Capped with
+   min() so a rare huge release doesn't blow the die out of its
+   cell. */
 @keyframes die-merge-pop {
   0% { transform: scale(0.6); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
-  45% { transform: scale(1.25); box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }
+  45% {
+    transform: scale(min(var(--cfg-merge-pop-cap, 1.6), calc(var(--cfg-merge-pop-base, 1.15) + var(--cfg-merge-pop-per-impact, 0.09) * (var(--merge-impact, 1) - 1))));
+    box-shadow: 0 0 0 min(var(--cfg-merge-pop-glow-cap, 24px), calc(var(--cfg-merge-pop-glow-base, 8px) + var(--cfg-merge-pop-glow-per-impact, 3px) * (var(--merge-impact, 1) - 1))) rgba(255, 255, 255, 0);
+  }
   100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
 }
 
 .die--merge-pop {
-  animation: die-merge-pop 360ms cubic-bezier(.25, .9, .3, 1.2);
+  animation: die-merge-pop var(--cfg-merge-pop-duration, 360ms) cubic-bezier(.25, .9, .3, 1.2);
 }
 
+/* A rejected piece bounced off this cell — harder if it was carrying
+   more mass. main.js sets --reject-strength to sqrt(mass) of the
+   rejected piece (D.scaleWithMass), so a value-1 piece (strength 1)
+   reproduces the original ±4px exactly. Capped so a heavy piece can't
+   shake a cell out of the grid. */
 @keyframes cell-shake {
   0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-4px); }
-  75% { transform: translateX(4px); }
+  25% { transform: translateX(max(calc(-1 * var(--cfg-shake-cap, 10px)), calc(-1 * var(--cfg-shake-amp, 4px) * var(--reject-strength, 1)))); }
+  75% { transform: translateX(min(var(--cfg-shake-cap, 10px), calc(var(--cfg-shake-amp, 4px) * var(--reject-strength, 1)))); }
 }
 
 .cell--shake {
-  animation: cell-shake 220ms ease;
+  animation: cell-shake var(--cfg-shake-duration, 220ms) ease;
 }
 
 .die {
@@ -202,11 +239,11 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: clamp(2px, 0.8dvh, 10px);
 }
 
 .queue-label {
-  font-size: 12px;
+  font-size: clamp(8px, 1.3dvh, 12px);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -220,16 +257,38 @@ body {
   grid-template-rows: repeat(var(--piece-rows), 1fr);
 }
 
+/* Reserves the tallest a piece can ever be (3 rows — the biggest
+   shape in SHAPE_LIBRARY) regardless of what's currently showing, so
+   rotating a piece between a 1-row and 3-row orientation never
+   changes this slot's own height. That keeps .queue-panel's total
+   height constant, which is what keeps .board-shell's available
+   space — and so the board's rendered size — stable across a
+   rotation. Sizing this from actual content instead (what it held
+   before this rule existed) makes the board grow and shrink under a
+   piece it has nothing to do with. Built from --queue-die, not a bare
+   px value, so this reserved footprint shrinks on a short viewport
+   instead of eating the board's share of it — see :root. */
+.piece-slot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(3 * var(--queue-die) + 2 * 4px);
+}
+
+.piece-slot--next {
+  min-height: calc(3 * var(--queue-die-next) + 2 * 4px);
+}
+
 .piece--current .die,
 .piece--current .piece-spacer {
-  width: 52px;
-  height: 52px;
+  width: var(--queue-die);
+  height: var(--queue-die);
 }
 
 .piece--next .die,
 .piece--next .piece-spacer {
-  width: 38px;
-  height: 38px;
+  width: var(--queue-die-next);
+  height: var(--queue-die-next);
 }
 
 .piece--next {
@@ -246,38 +305,48 @@ body {
   user-select: none;
   -webkit-user-select: none;
   will-change: transform;
-  animation: piece-pop 160ms ease-out;
 }
 
 .piece--dragging {
   cursor: grabbing;
   position: relative;
   z-index: 20;
-  pointer-events: none;
 }
 
 .piece--dragging .die {
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
 }
 
-.piece--snapback {
-  transition: transform 180ms cubic-bezier(.2, .8, .3, 1.2);
+/* Only while the pointer is actively tracking (not during the
+   springback that follows release) — needed so elementFromPoint can
+   see the board cell under the piece instead of the piece itself. */
+.piece--tracking {
+  pointer-events: none;
+}
+
+@keyframes die-spin-360 {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.die--spin {
+  animation: die-spin-360 var(--cfg-single-die-spin, 220ms) ease-out;
+}
+
+/* Only a piece that genuinely just entered the slot (main.js's
+   general render() path) gets this pop — rotation redraws the same
+   piece via a direct R.renderQueue call that never adds this class,
+   so spinning a piece never replays an "arriving" animation for a
+   piece that was already there. Scale only, no opacity: entering and
+   settling into rotation both read as one visual language (motion),
+   not motion plus an unrelated fade. */
+.piece--entering {
+  animation: piece-pop var(--cfg-entrance-duration, 160ms) ease-out;
 }
 
 @keyframes piece-pop {
-  from { transform: scale(0.85); opacity: 0.6; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-/* rotatePiece() is a pure 90°-clockwise rotation of a grid of uniform
-   square cells, so literally rotating the old piece element by 90deg
-   reproduces it exactly — the old shape spins into the new shape's
-   bounding box, then main.js swaps in the freshly rotated DOM once the
-   transition ends. */
-.piece--rotating {
-  transition: transform 220ms cubic-bezier(.3, .7, .4, 1);
-  transform: rotate(90deg);
-  pointer-events: none;
+  from { transform: scale(var(--cfg-entrance-scale, 0.85)); }
+  to { transform: scale(1); }
 }
 
 .toolbar {
@@ -286,7 +355,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  padding-top: 8px;
+  padding-top: clamp(2px, 0.8dvh, 8px);
 }
 
 .icon-button {
@@ -296,15 +365,15 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: clamp(2px, 0.8dvh, 8px);
   cursor: pointer;
   font-family: inherit;
   touch-action: manipulation;
 }
 
 .icon-circle {
-  width: 64px;
-  height: 64px;
+  width: clamp(28px, 5.5dvh, 56px);
+  height: clamp(28px, 5.5dvh, 56px);
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
@@ -318,8 +387,17 @@ body {
   color: var(--accent);
 }
 
+/* Stays clickable and visible above the full-screen tuning panel
+   (z-index 60) even while it's open, without moving out of its normal
+   toolbar position — it's the one control that has to always be
+   reachable to toggle the panel closed again. */
+#config-toggle-btn {
+  position: relative;
+  z-index: 70;
+}
+
 .icon-label {
-  font-size: 15px;
+  font-size: clamp(9px, 1.6dvh, 15px);
   font-weight: 600;
 }
 
@@ -374,6 +452,13 @@ body {
   touch-action: manipulation;
 }
 
+.dialog-close--ghost {
+  margin-top: 10px;
+  background: none;
+  border: 1px solid #3a3a3a;
+  color: var(--text);
+}
+
 .game-over {
   position: fixed;
   inset: 0;
@@ -411,4 +496,264 @@ body {
   font-weight: 700;
   cursor: pointer;
   touch-action: manipulation;
+}
+
+/* --- Tuning panel ------------------------------------------------- */
+
+.config-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.config-panel[hidden] {
+  display: none;
+}
+
+.config-island {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: max(12px, env(safe-area-inset-top)) 14px 12px;
+  background: #111;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+.config-island-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.config-island-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-right: 2px;
+}
+
+.config-btn {
+  background: #1e1e1e;
+  border: 1px solid #333;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.config-btn:active {
+  background: #2a2a2a;
+}
+
+.config-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 14px calc(24px + env(safe-area-inset-bottom));
+  -webkit-overflow-scrolling: touch;
+}
+
+.config-group-heading {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 20px 0 6px;
+}
+
+.config-group-heading:first-child {
+  margin-top: 14px;
+}
+
+/* A config "row" is a logical/visual unit, not a single line of text —
+   it holds however much content it needs (label, readout, a slider,
+   min/max hints) and is just visually separated from its neighbors. */
+.config-row {
+  padding: 10px 0;
+  border-bottom: 1px solid #202020;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.config-row-label {
+  font-size: 13px;
+  color: var(--text);
+}
+
+.config-row-value {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.config-row-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.config-row-control input[type="range"] {
+  flex: 1 1 auto;
+  accent-color: var(--accent);
+}
+
+/* Bool-item control: same switch look as .pin-toggle, but bigger since
+   it's the row's primary control (the slider's replacement) rather
+   than a secondary one. Sits flex: 1 1 auto so its track fills the
+   same space a range input would. */
+.bool-toggle {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 46px;
+  height: 26px;
+  display: inline-block;
+}
+
+.bool-toggle input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.bool-toggle-track {
+  position: absolute;
+  inset: 0;
+  background: #2c2c2c;
+  border-radius: 999px;
+  transition: background 150ms ease;
+  pointer-events: none;
+}
+
+.bool-toggle-track::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #888;
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.bool-toggle input:checked + .bool-toggle-track {
+  background: rgba(79, 142, 247, 0.35);
+}
+
+.bool-toggle input:checked + .bool-toggle-track::before {
+  transform: translateX(20px);
+  background: var(--accent);
+}
+
+.config-row-bounds {
+  font-size: 10px;
+  color: #555;
+  display: flex;
+  justify-content: space-between;
+}
+
+/* Pin toggle: a small switch, not a checkbox that looks like a form
+   control — flipping it mirrors this row into the pinned HUD (see
+   .pinned-config) instead of saving anything. */
+.pin-toggle {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 20px;
+  display: inline-block;
+}
+
+.pin-toggle input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.pin-toggle-track {
+  position: absolute;
+  inset: 0;
+  background: #2c2c2c;
+  border-radius: 999px;
+  transition: background 150ms ease;
+  pointer-events: none;
+}
+
+.pin-toggle-track::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #888;
+  transition: transform 150ms ease, background 150ms ease;
+}
+
+.pin-toggle input:checked + .pin-toggle-track {
+  background: rgba(79, 142, 247, 0.35);
+}
+
+.pin-toggle input:checked + .pin-toggle-track::before {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+
+/* --- Pinned config HUD --------------------------------------------
+   Floats over the game, anchored to the bottom edge, growing upward
+   as rows are pinned. Never reflows the board/queue/toolbar under it
+   — it's a pure overlay. Bounded by max-height with its own scroll so
+   pinning many rows can never creep up over the staging area or
+   board; it's fine for it to cover the toolbar/Settings button as it
+   grows, since it sits above everything. */
+.pinned-config {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  max-height: 38vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(10, 10, 10, 0.94);
+  backdrop-filter: blur(6px);
+  border-top: 1px solid #2c2c2c;
+  border-radius: 14px 14px 0 0;
+  padding: 10px 14px max(10px, env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.pinned-config[hidden] {
+  display: none;
+}
+
+.pinned-config .config-row {
+  padding: 8px 0;
+}
+
+.pinned-config .config-row-label {
+  font-size: 12px;
 }

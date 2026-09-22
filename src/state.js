@@ -8,7 +8,10 @@
  *     score: number,
  *     moves: number,
  *     gameOver: boolean,
- *     lastMerges: { r, c, value }[]      // for the renderer/animations to react to
+ *     lastMerges: {                      // for the renderer/animations to react to
+ *       r, c, value, massReleased, wave,
+ *       consumed: { r, c, hop, path: {r,c}[] }[],
+ *     }[]
  *     rng: () => number
  *   }
  * A Piece is { cells: [{ dr, dc, value }, ...] }, offsets relative to
@@ -50,12 +53,15 @@ const DiceMergeState = (() => {
     );
   }
 
-  // Is there any (rotation, anchor) combination that fits the current
-  // piece somewhere on the board? Checked after every placement to
-  // decide game over — the board can be non-full and still be stuck.
-  function hasAnyValidPlacement(state) {
+  // Is there any (rotation, anchor) combination that fits `piece`
+  // somewhere on the board? Defaults to the queue head, but takes any
+  // piece so cullUnplaceablePieces can also ask this about a candidate
+  // replacement piece — a piece with nowhere to go is never itself a
+  // loss condition (see isBoardFull/hasPendingMerge below), just
+  // something that gets swapped out before the player ever sees it.
+  function hasAnyValidPlacement(state, piece = state.queue[0]) {
     const size = state.config.boardSize;
-    let variant = state.queue[0];
+    let variant = piece;
     for (let rot = 0; rot < 4; rot++) {
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
@@ -67,53 +73,153 @@ const DiceMergeState = (() => {
     return false;
   }
 
-  // Flood-fills the orthogonally-connected same-value region containing (r, c).
+  function isBoardFull(state) {
+    return state.board.every((row) => row.every((value) => value !== 0));
+  }
+
+  // Whole-board scan for any same-value orthogonal cluster already at
+  // or past the merge threshold. Should never actually be true in
+  // practice — every placement resolves merges touching its own cells
+  // immediately via resolveMerges — but game over is defined directly
+  // against this rather than assumed, so the definition ("the board is
+  // full and there's nothing left to merge") holds on its own even if
+  // that invariant were ever violated, instead of silently relying on it.
+  function hasPendingMerge(state) {
+    const size = state.config.boardSize;
+    const seen = new Set();
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        const key = `${r},${c}`;
+        if (seen.has(key) || state.board[r][c] === 0) continue;
+        const cluster = floodCluster(state, r, c);
+        cluster.forEach((cell) => seen.add(`${cell.r},${cell.c}`));
+        if (cluster.length >= D.params.mergeMinCluster) return true;
+      }
+    }
+    return false;
+  }
+
+  // Flood-fills the orthogonally-connected same-value region containing
+  // (r, c) via BFS — not just to find the set of cells, but to record
+  // each one's true shortest lateral hop-distance from the root and
+  // the specific neighbor it was reached through. The renderer uses
+  // that parent chain later to fly a consumed die back to the survivor
+  // hop by hop along real lateral connectivity, rather than cutting a
+  // straight (possibly diagonal) line through cells it was never
+  // actually linked to.
   function floodCluster(state, r, c) {
     const value = state.board[r][c];
-    const visited = new Set();
-    const cluster = [];
-    const stack = [[r, c]];
-    while (stack.length) {
-      const [cr, cc] = stack.pop();
-      const key = `${cr},${cc}`;
-      if (visited.has(key)) continue;
-      if (!inBounds(state, cr, cc)) continue;
-      if (state.board[cr][cc] !== value) continue;
-      visited.add(key);
-      cluster.push([cr, cc]);
-      for (const [dr, dc] of D.DIRECTIONS) stack.push([cr + dr, cc + dc]);
+    const visited = new Set([`${r},${c}`]);
+    const cluster = [{ r, c, hop: 0, parent: null }];
+    const queue = [{ r, c, hop: 0 }];
+    while (queue.length) {
+      const { r: cr, c: cc, hop } = queue.shift();
+      for (const [dr, dc] of D.DIRECTIONS) {
+        const nr = cr + dr;
+        const nc = cc + dc;
+        const key = `${nr},${nc}`;
+        if (visited.has(key)) continue;
+        if (!inBounds(state, nr, nc)) continue;
+        if (state.board[nr][nc] !== value) continue;
+        visited.add(key);
+        cluster.push({ r: nr, c: nc, hop: hop + 1, parent: { r: cr, c: cc } });
+        queue.push({ r: nr, c: nc, hop: hop + 1 });
+      }
     }
     return cluster;
   }
 
   // Starting from the cells a piece just occupied, merges any
-  // same-value cluster of MERGE_MIN_CLUSTER+ into a single die at the
-  // cell that triggered it, one value higher. Re-checks that cell
+  // same-value cluster of MERGE_MIN_CLUSTER+ into a single value+1 die
+  // at the cell that triggered it (see D.resolveClusterMass) — always
+  // exactly one tier, however large the cluster. Re-checks that cell
   // afterward so a merge can chain into a bigger neighboring cluster.
+  //
+  // Each merge is tagged with a `wave`: 0 for a merge triggered
+  // directly by the placement (independent of any other merge from
+  // this same placement), N for a merge only possible because a wave
+  // (N-1) merge produced the die it consumes. The renderer uses this
+  // to animate waves in causal order — merges within a wave are
+  // independent and can play together, but a later wave has to wait
+  // for the wave that fed it to visually resolve first.
   function resolveMerges(state, seedCells) {
     let scoreGained = 0;
     const merges = [];
-    const worklist = [...seedCells];
+    const worklist = seedCells.map((cell) => ({ cell, wave: 0 }));
     while (worklist.length) {
-      const [r, c] = worklist.shift();
+      const { cell, wave } = worklist.shift();
+      const [r, c] = cell;
       if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
       const cluster = floodCluster(state, r, c);
-      if (cluster.length >= D.MERGE_MIN_CLUSTER) {
-        const newValue = state.board[r][c] + 1;
+      if (cluster.length >= D.params.mergeMinCluster) {
+        const value = state.board[r][c];
+        const { newValue, massReleased, score } = D.resolveClusterMass(value, cluster.length);
+
+        // Each consumed die's `path` is the lateral hop-by-hop chain
+        // back to the survivor (r, c) — exactly the connectivity that
+        // made it part of this cluster.
+        const byKey = new Map(cluster.map((cell) => [`${cell.r},${cell.c}`, cell]));
+        const pathToRoot = (cell) => {
+          const path = [{ r: cell.r, c: cell.c }];
+          let cur = cell;
+          while (cur.parent) {
+            cur = byKey.get(`${cur.parent.r},${cur.parent.c}`);
+            path.push({ r: cur.r, c: cur.c });
+          }
+          return path;
+        };
+
         // Cells other than the trigger cell disappear into it — recorded
-        // so the renderer can animate them shrinking away before the
-        // board settles into its merged state.
+        // so the renderer can animate them flying to the survivor along
+        // their own lateral path before the board settles into its
+        // merged state.
         const consumed = cluster
-          .filter(([cr, cc]) => !(cr === r && cc === c))
-          .map(([cr, cc]) => ({ r: cr, c: cc }));
-        for (const [cr, cc] of cluster) state.board[cr][cc] = 0;
+          .filter((cell) => !(cell.r === r && cell.c === c))
+          .map((cell) => ({ r: cell.r, c: cell.c, hop: cell.hop, path: pathToRoot(cell) }));
+        for (const cell of cluster) state.board[cell.r][cell.c] = 0;
         state.board[r][c] = newValue;
-        scoreGained += D.scoreForMerge(newValue, cluster.length);
-        merges.push({ r, c, value: newValue, consumed });
-        worklist.push([r, c]);
+        scoreGained += score;
+        merges.push({ r, c, value: newValue, consumed, massReleased, wave });
+        worklist.push({ cell: [r, c], wave: wave + 1 });
       }
     }
     return { scoreGained, merges };
+  }
+
+  // Shuffles in place with the game's own rng, so which of several
+  // equally-valid seed cells "wins" a merge is a deliberate coin flip
+  // recorded by the same random stream as everything else, rather than
+  // silently falling out of whatever order a piece's shape happened to
+  // list its cells in.
+  function shuffleInPlace(arr, rng) {
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  // A piece with nowhere to go (in any rotation) never sits in the
+  // queue waiting to be dealt with — it's silently swapped for a
+  // freshly generated replacement instead, so the player is never
+  // stuck holding something structurally unplaceable. Retried a bounded
+  // number of times against the normal weighted generator; as long as
+  // the board has any empty cell at all (guaranteed by only calling
+  // this once game over has been ruled out — see placePiece), a lone
+  // die always fits somewhere, so the guaranteed-fit fallback below
+  // only ever matters if the weight table itself has been tuned to
+  // never spawn one.
+  const CULL_MAX_ATTEMPTS = 200;
+  function cullUnplaceablePieces(state) {
+    state.queue = state.queue.map((piece) => {
+      if (hasAnyValidPlacement(state, piece)) return piece;
+      for (let i = 0; i < CULL_MAX_ATTEMPTS; i++) {
+        const candidate = D.generatePiece(state.rng);
+        if (hasAnyValidPlacement(state, candidate)) return candidate;
+      }
+      return { cells: [{ dr: 0, dc: 0, value: D.rollSpawnValue(state.rng) }] };
+    });
+    return state;
   }
 
   // `selected` (optional, absolute {r, c}) is the cell the player was
@@ -122,7 +228,10 @@ const DiceMergeState = (() => {
   // forming cluster (its position survives, holding the bumped value,
   // while the rest of the cluster is cleared) — so putting the
   // selected cell first here means a merge converges on the die the
-  // player was holding, not an arbitrary cell of the piece.
+  // player was holding, not an arbitrary cell of the piece. When the
+  // selected cell isn't itself part of the cluster that ends up
+  // forming, the remaining seeds are shuffled first so the survivor
+  // among *them* is picked at random instead of by shape-array order.
   function placePiece(state, r, c, selected) {
     if (state.gameOver) return state;
     const piece = state.queue[0];
@@ -133,7 +242,7 @@ const DiceMergeState = (() => {
       state.board[rr][cc] = value;
     });
 
-    let seedCells = placedCells.map(({ r: rr, c: cc }) => [rr, cc]);
+    let seedCells = shuffleInPlace(placedCells.map(({ r: rr, c: cc }) => [rr, cc]), state.rng);
     if (selected) {
       seedCells = [
         [selected.r, selected.c],
@@ -149,8 +258,14 @@ const DiceMergeState = (() => {
     state.queue.shift();
     state.queue.push(D.generatePiece(state.rng));
 
-    if (!hasAnyValidPlacement(state)) {
+    // Losing means the board filled up with nothing left to merge —
+    // never "the piece you were dealt doesn't fit." A piece (or both
+    // queued pieces) having nowhere to go is handled by replacing it
+    // (see cullUnplaceablePieces), not by ending the game.
+    if (isBoardFull(state) && !hasPendingMerge(state)) {
       state.gameOver = true;
+    } else {
+      cullUnplaceablePieces(state);
     }
 
     return state;
@@ -169,6 +284,9 @@ const DiceMergeState = (() => {
     shapeCellsAt,
     canPlaceAt,
     hasAnyValidPlacement,
+    cullUnplaceablePieces,
+    isBoardFull,
+    hasPendingMerge,
     inBounds,
   };
 })();
