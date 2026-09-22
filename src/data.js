@@ -58,6 +58,7 @@ const DiceMergeData = (() => {
     mergeMinCluster: 3, // dice needed, same-value and touching, to merge
     spawnTemperature: 2, // higher = flatter spawn-rarity curve
     spawnValuePool: 8, // highest value ever rolled for as a spawn
+    noRepeatInCluster: false, // a multi-cell piece's own dice can't share a value
   };
 
   // Every die value stands for a "mass" that grows per tier — used for
@@ -108,6 +109,30 @@ const DiceMergeData = (() => {
       roll -= weights[i];
     }
     return 1;
+  }
+
+  // Same weighted roll as rollSpawnValue, but excluding a set of
+  // already-used values — used by generatePiece when noRepeatInCluster
+  // is on. Falls back to an ordinary (possibly repeating) roll once the
+  // exclusion set covers the whole spawn pool, so a tiny pool combined
+  // with a big piece never hangs looking for a value that can't exist.
+  function rollSpawnValueExcluding(exclude, rng = Math.random) {
+    const values = [];
+    const weights = [];
+    let total = 0;
+    for (let value = 1; value <= params.spawnValuePool; value++) {
+      if (exclude.has(value)) continue;
+      values.push(value);
+      weights.push(spawnWeight(value));
+      total += weights[weights.length - 1];
+    }
+    if (values.length === 0) return rollSpawnValue(rng);
+    let roll = rng() * total;
+    for (let i = 0; i < weights.length; i++) {
+      if (roll < weights[i]) return values[i];
+      roll -= weights[i];
+    }
+    return values[values.length - 1];
   }
 
   // Real materials take longer to settle the more massive they are — a
@@ -163,12 +188,21 @@ const DiceMergeData = (() => {
   // whose cells are shuffled independently: each rolls its own value
   // off the same spawn curve as a lone die (rollSpawnValue), rather
   // than the whole piece sharing one roll. Shape (where it sits) and
-  // value (what each cell is made of) are independent axes.
+  // value (what each cell is made of) are independent axes — unless
+  // params.noRepeatInCluster is on, in which case each cell's roll
+  // excludes values already used elsewhere in this same piece.
   function generatePiece(rng = Math.random) {
     const size = rollPieceSize(rng);
     const shapes = SHAPE_LIBRARY[size];
     const shape = shapes[Math.floor(rng() * shapes.length)];
-    const cells = shape.map(([dr, dc]) => ({ dr, dc, value: rollSpawnValue(rng) }));
+    const used = new Set();
+    const cells = shape.map(([dr, dc]) => {
+      const value = params.noRepeatInCluster
+        ? rollSpawnValueExcluding(used, rng)
+        : rollSpawnValue(rng);
+      used.add(value);
+      return { dr, dc, value };
+    });
     return { cells };
   }
 
@@ -213,6 +247,7 @@ const DiceMergeData = (() => {
     params,
     spawnWeight,
     rollSpawnValue,
+    rollSpawnValueExcluding,
     massForValue,
     resolveClusterMass,
     scaleWithMass,

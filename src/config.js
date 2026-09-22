@@ -71,6 +71,7 @@ const DiceMergeConfig = (() => {
     { id: 'pieceWeight2', group: 'Balance & Spawn', label: 'Piece-size weight: 2-cell', unit: '', initial: 35, min: 0, max: 100, step: 1, apply: { type: 'pieceWeight', index: 1 } },
     { id: 'pieceWeight3', group: 'Balance & Spawn', label: 'Piece-size weight: 3-cell', unit: '', initial: 25, min: 0, max: 100, step: 1, apply: { type: 'pieceWeight', index: 2 } },
     { id: 'mergeMinCluster', group: 'Balance & Spawn', label: 'Merge threshold (dice needed)', unit: '', initial: 3, min: 2, max: 6, step: 1, apply: { type: 'data', key: 'mergeMinCluster' } },
+    { id: 'noRepeatInCluster', group: 'Balance & Spawn', label: 'No repeat die value in a piece', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'noRepeatInCluster' } },
   ];
 
   const byId = new Map(SCHEMA.map((item) => [item.id, item]));
@@ -100,8 +101,10 @@ const DiceMergeConfig = (() => {
   // Clamps to the schema's own declared range. Applied on every read as
   // well as on set(), so a value that got into storage out of range —
   // hand-edited localStorage, or a caller that bypassed the panel's
-  // slider — can't stay out of range either.
+  // slider — can't stay out of range either. A 'bool' item has no
+  // min/max to clamp to — it's just coerced to an actual boolean.
   function clamp(item, value) {
+    if (item.type === 'bool') return typeof value === 'boolean' ? value : Boolean(item.initial);
     if (typeof value !== 'number' || Number.isNaN(value)) return item.initial;
     return Math.min(item.max, Math.max(item.min, value));
   }

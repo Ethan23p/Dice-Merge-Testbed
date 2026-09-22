@@ -740,6 +740,7 @@
   }
 
   function formatValue(item, value) {
+    if (item.type === 'bool') return value ? 'On' : 'Off';
     return `${value.toFixed(decimalsFor(item.step))}${item.unit}`;
   }
 
@@ -747,7 +748,10 @@
     const item = CFG.SCHEMA.find((i) => i.id === id);
     const value = CFG.get(id);
     registryFor(id).valueEls.forEach(({ input, valueEl }) => {
-      if (document.activeElement !== input) input.value = String(value);
+      if (document.activeElement !== input) {
+        if (item.type === 'bool') input.checked = Boolean(value);
+        else input.value = String(value);
+      }
       valueEl.textContent = formatValue(item, value);
     });
   }
@@ -783,6 +787,23 @@
     return label;
   }
 
+  // A 'bool' item's own control: a switch styled like the pin toggle
+  // but larger, since it's the row's primary control rather than a
+  // secondary one.
+  function buildBoolControl(item) {
+    const label = document.createElement('label');
+    label.className = 'bool-toggle';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = Boolean(CFG.get(item.id));
+    input.setAttribute('aria-label', item.label);
+    const track = document.createElement('span');
+    track.className = 'bool-toggle-track';
+    label.appendChild(input);
+    label.appendChild(track);
+    return { label, input };
+  }
+
   // `compact` drops the min/max footer (used in the pinned HUD, where
   // space is at a premium); `scope` tags this row's DOM nodes so a HUD
   // rebuild can find and drop exactly its own previous nodes without
@@ -805,21 +826,32 @@
 
     const control = document.createElement('div');
     control.className = 'config-row-control';
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = String(item.min);
-    input.max = String(item.max);
-    input.step = String(item.step);
-    input.value = String(CFG.get(item.id));
-    input.addEventListener('input', () => {
-      CFG.set(item.id, Number(input.value));
-      syncValueDisplays(item.id);
-    });
-    control.appendChild(input);
+    let input;
+    if (item.type === 'bool') {
+      const bool = buildBoolControl(item);
+      input = bool.input;
+      input.addEventListener('change', () => {
+        CFG.set(item.id, input.checked);
+        syncValueDisplays(item.id);
+      });
+      control.appendChild(bool.label);
+    } else {
+      input = document.createElement('input');
+      input.type = 'range';
+      input.min = String(item.min);
+      input.max = String(item.max);
+      input.step = String(item.step);
+      input.value = String(CFG.get(item.id));
+      input.addEventListener('input', () => {
+        CFG.set(item.id, Number(input.value));
+        syncValueDisplays(item.id);
+      });
+      control.appendChild(input);
+    }
     control.appendChild(buildPinToggle(item, scope));
     row.appendChild(control);
 
-    if (!compact) {
+    if (!compact && item.type !== 'bool') {
       const bounds = document.createElement('div');
       bounds.className = 'config-row-bounds';
       const lo = document.createElement('span');
