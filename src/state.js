@@ -147,27 +147,26 @@ const DiceMergeState = (() => {
   // the bumped value, while the rest are cleared) — one priority
   // order, applied the same way whatever produced the cluster, so the
   // outcome never depends on scan order:
-  //   1. the cell the player is actually holding, if it's in this
-  //      cluster (see placePiece's `selected`) — a merge the player
-  //      caused converges on the die they dropped;
-  //   2. otherwise, if gravity's on, whichever cell sits furthest
-  //      along the gravity vector — the cluster resolves onto the
-  //      cell it's already resting against, not an arbitrary member
-  //      that would then have to fall again;
-  //   3. otherwise, row-major order — arbitrary but deterministic.
-  function clusterSurvivor(cluster, heldCell, gravityVector) {
-    function rank(cell) {
-      if (heldCell && cell.r === heldCell.r && cell.c === heldCell.c) return -Infinity;
-      if (gravityVector) return -(cell.r * gravityVector.dr + cell.c * gravityVector.dc);
-      return 0;
+  //   1. the exact die the player is holding, if it's in this cluster
+  //      (see placePiece's `selected`) — a merge the player caused
+  //      converges on the die they dropped;
+  //   2. otherwise, any cell descended from the piece they just
+  //      placed, if one's in this cluster (see `heldPieceCells`) —
+  //      still "theirs" even if it wasn't the exact cell they grabbed;
+  //   3. otherwise, uniformly at random among the whole cluster.
+  // Ties within a tier (more than one piece cell in the same forming
+  // cluster, or no held cell/piece at all) are also broken at random,
+  // via the game's own rng — never by scan order.
+  function clusterSurvivor(cluster, heldCell, heldPieceCells, rng) {
+    function tier(cell) {
+      if (heldCell && cell.r === heldCell.r && cell.c === heldCell.c) return 0;
+      if (heldPieceCells.has(`${cell.r},${cell.c}`)) return 1;
+      return 2;
     }
-    return cluster.reduce((best, cell) => {
-      const cellRank = rank(cell);
-      const bestRank = rank(best);
-      if (cellRank !== bestRank) return cellRank < bestRank ? cell : best;
-      if (cell.r !== best.r) return cell.r < best.r ? cell : best;
-      return cell.c < best.c ? cell : best;
-    });
+    let bestTier = 2;
+    cluster.forEach((cell) => { bestTier = Math.min(bestTier, tier(cell)); });
+    const candidates = bestTier === 2 ? cluster : cluster.filter((cell) => tier(cell) === bestTier);
+    return candidates.length === 1 ? candidates[0] : candidates[Math.floor(rng() * candidates.length)];
   }
 
   // Each consumed cell's hop-by-hop path back to `root`, walked over
@@ -212,9 +211,16 @@ const DiceMergeState = (() => {
   // state.board) — only once all of that is known does any cluster
   // touch the board. However many clusters resolve this generation,
   // none of their mutations can leak into another's path.
-  function applyMergeGeneration(state, clusters, heldCell, gravityVector) {
+  //
+  // Also returns the piece-lineage set (see `heldPieceCells`) updated
+  // for whatever happened: a cluster this generation that included any
+  // piece cell has its whole membership swapped out for just its
+  // survivor — the merged die is the piece's new "representative" for
+  // priority in later generations, whether or not it was itself a
+  // piece cell.
+  function applyMergeGeneration(state, clusters, heldCell, heldPieceCells, rng) {
     const applications = clusters.map((cluster) => {
-      const survivor = clusterSurvivor(cluster, heldCell, gravityVector);
+      const survivor = clusterSurvivor(cluster, heldCell, heldPieceCells, rng);
       const value = state.board[survivor.r][survivor.c];
       const { newValue, massReleased, score } = D.resolveClusterMass(value, cluster.length);
       const paths = pathsFromRoot(cluster, survivor);
@@ -224,16 +230,22 @@ const DiceMergeState = (() => {
     let scoreGained = 0;
     const moves = [];
     const pops = [];
+    const nextHeldPieceCells = new Set(heldPieceCells);
     applications.forEach(({ cluster, survivor, value, newValue, massReleased, score, paths }) => {
+      const touchesPiece = cluster.some((cell) => nextHeldPieceCells.has(`${cell.r},${cell.c}`));
       cluster
         .filter((cell) => !(cell.r === survivor.r && cell.c === survivor.c))
         .forEach((cell) => moves.push({ value, path: paths.get(`${cell.r},${cell.c}`) }));
-      cluster.forEach((cell) => { state.board[cell.r][cell.c] = 0; });
+      cluster.forEach((cell) => {
+        state.board[cell.r][cell.c] = 0;
+        nextHeldPieceCells.delete(`${cell.r},${cell.c}`);
+      });
       state.board[survivor.r][survivor.c] = newValue;
+      if (touchesPiece) nextHeldPieceCells.add(`${survivor.r},${survivor.c}`);
       scoreGained += score;
       pops.push({ r: survivor.r, c: survivor.c, massReleased });
     });
-    return { scoreGained, moves, pops };
+    return { scoreGained, moves, pops, heldPieceCells: nextHeldPieceCells };
   }
 
   // Each direction as the (dr, dc) every die tries to move toward.
@@ -304,6 +316,18 @@ const DiceMergeState = (() => {
     return { r: end.r, c: end.c };
   }
 
+  // Same idea as advanceHeldCell, but for the whole set of cells
+  // descended from the piece just placed (see `heldPieceCells`).
+  function advanceHeldPieceCells(heldPieceCells, moves) {
+    const next = new Set();
+    heldPieceCells.forEach((key) => {
+      const [r, c] = key.split(',').map(Number);
+      const move = moves.find((m) => m.path[0].r === r && m.path[0].c === c);
+      next.add(move ? `${move.path[move.path.length - 1].r},${move.path[move.path.length - 1].c}` : key);
+    });
+    return next;
+  }
+
   // The one settle loop, run after every placement: a fixed-point
   // iteration in the cellular-automaton sense — every generation reads
   // the board exactly as the previous generation left it and computes
@@ -322,13 +346,13 @@ const DiceMergeState = (() => {
   // merge generation strictly shrinks the occupied-cell count — so the
   // two alternating can't cycle forever.
   const SETTLE_MAX_GENERATIONS = 500;
-  function settle(state, heldCellInit) {
+  function settle(state, heldCellInit, heldPieceCellsInit) {
     const steps = [];
     let scoreGained = 0;
     let heldCell = heldCellInit || null;
+    let heldPieceCells = heldPieceCellsInit ? new Set(heldPieceCellsInit) : new Set();
     const gravityOn = D.params.gravityEnabled;
     const direction = D.params.gravityDirection;
-    const gravityVector = gravityOn ? GRAVITY_VECTORS[direction] : null;
 
     for (let gen = 0; gen < SETTLE_MAX_GENERATIONS; gen++) {
       if (gravityOn) {
@@ -336,13 +360,15 @@ const DiceMergeState = (() => {
         if (moves.length) {
           steps.push({ board: state.board.map((row) => row.slice()), moves, pops: [] });
           heldCell = advanceHeldCell(heldCell, moves);
+          heldPieceCells = advanceHeldPieceCells(heldPieceCells, moves);
           continue;
         }
       }
       const clusters = findClusters(state);
       if (!clusters.length) break;
-      const result = applyMergeGeneration(state, clusters, heldCell, gravityVector);
+      const result = applyMergeGeneration(state, clusters, heldCell, heldPieceCells, state.rng);
       scoreGained += result.scoreGained;
+      heldPieceCells = result.heldPieceCells;
       steps.push({ board: state.board.map((row) => row.slice()), moves: result.moves, pops: result.pops });
     }
     return { scoreGained, steps };
@@ -376,7 +402,10 @@ const DiceMergeState = (() => {
   // cell priority (see clusterSurvivor) is what makes a forming merge
   // converge there rather than an arbitrary cell of the piece, and
   // keeps following that same die through however many gravity shifts
-  // happen before it merges.
+  // happen before it merges. Every other cell of the piece still gets
+  // second priority (see `heldPieceCells`), so a merge the placement
+  // caused converges somewhere in the piece the player just dropped
+  // even when it doesn't happen to include the exact cell they grabbed.
   //
   // Returns `{ steps }`: the full timeline of this placement, from the
   // piece landing through however many generations settle() takes —
@@ -396,7 +425,8 @@ const DiceMergeState = (() => {
     });
     const steps = [{ board: state.board.map((row) => row.slice()), moves: [], pops: [] }];
 
-    const settleResult = settle(state, selected || null);
+    const heldPieceCells = new Set(placedCells.map(({ r: rr, c: cc }) => `${rr},${cc}`));
+    const settleResult = settle(state, selected || null, heldPieceCells);
     state.score += settleResult.scoreGained;
     steps.push(...settleResult.steps);
     state.moves += 1;
