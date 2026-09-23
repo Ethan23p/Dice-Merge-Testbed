@@ -85,25 +85,55 @@ const DiceMergeAnimate = (() => {
     return hopDurationForValue(maxValue);
   }
 
-  // A merge beyond the 3-die baseline sends out one extra rapid pulse
-  // per die past that (styles.css's --extra-pulses iteration count) —
-  // the bigger the cluster, the more it visibly builds before landing.
+  // A merge beyond the 3-die baseline sends out one extra ring per die
+  // past that — the bigger the cluster, the more it visibly builds
+  // before landing.
   const EXTRA_PULSE_BASELINE = 3;
 
   function extraPulseCount(pop) {
     return Math.max(0, (pop.size || 0) - EXTRA_PULSE_BASELINE);
   }
 
+  // How long a pop's own ring "train" takes to fully play out: the
+  // base pulse, then (for an extra ring) however many staggered starts
+  // it takes to fit them all, plus one full ring duration for the last
+  // one to finish. Shared by highlightTargets (to time each ring's
+  // delay) and playStep (to know how long to hold the reveal).
+  function pulseTrainMs(pop) {
+    const extra = extraPulseCount(pop);
+    if (extra === 0) return CFG.get('pulseDurationMs');
+    return CFG.get('pulseDurationMs')
+      + (extra - 1) * CFG.get('pulseBurstIntervalMs')
+      + CFG.get('pulseBurstDurationMs');
+  }
+
   // Highlights the cells this step's dice are converging on or landing
   // on — pure DOM class toggling against whatever's already rendered
   // (the previous step's board), never a re-render, so it never
-  // disturbs a fly animation already in progress.
+  // disturbs a fly animation already in progress. A cluster beyond the
+  // 3-die baseline also gets one `.merge-target-ring` child per extra
+  // die, each a one-way grow-and-fade ring (styles.css) with its own
+  // start time staggered after the base pulse — a real emanation, not
+  // a second animation squeezed onto the die's own box-shadow (that
+  // reads as flicker, not distinct pulses; see styles.css). Ring
+  // elements never need cleanup: the die itself is discarded whole by
+  // the next renderBoard.
   function highlightTargets(boardEl, pops) {
     pops.forEach((pop) => {
       const die = boardEl.querySelector(`.cell[data-r="${pop.r}"][data-c="${pop.c}"] .die`);
       if (!die) return;
-      die.style.setProperty('--extra-pulses', String(extraPulseCount(pop)));
       die.classList.add('die--merge-target');
+      const extra = extraPulseCount(pop);
+      if (extra > 0) {
+        die.style.position = 'relative';
+        const intervalMs = CFG.get('pulseBurstIntervalMs');
+        for (let i = 0; i < extra; i++) {
+          const ring = document.createElement('span');
+          ring.className = 'merge-target-ring';
+          ring.style.animationDelay = `${CFG.get('pulseDurationMs') + i * intervalMs}ms`;
+          die.appendChild(ring);
+        }
+      }
     });
   }
 
@@ -154,10 +184,7 @@ const DiceMergeAnimate = (() => {
       // renderBoard's innerHTML reset (which would cut a pulse train
       // off mid-burst) never fires early. Still capped by settleMaxMs
       // so an extreme cluster size can't stall the whole cascade.
-      const maxPulseTrainMs = step.pops.reduce(
-        (max, pop) => Math.max(max, CFG.get('pulseDurationMs') + extraPulseCount(pop) * CFG.get('pulseBurstDurationMs')),
-        0
-      );
+      const maxPulseTrainMs = step.pops.reduce((max, pop) => Math.max(max, pulseTrainMs(pop)), 0);
       const flightMs = Math.min(CFG.get('settleMaxMs'), Math.max(maxSegments * hopMs, maxPulseTrainMs));
       animateMoves(boardEl, step.moves, hopMs);
 
