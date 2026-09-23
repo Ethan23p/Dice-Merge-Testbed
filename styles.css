@@ -159,8 +159,18 @@ body {
   50% { box-shadow: 0 0 0 var(--cfg-pulse-ring, 10px) rgba(79, 142, 247, 0); }
 }
 
+/* A merge past the 3-die baseline (see D.params.mergeMinCluster in
+   animate.js's highlightTargets) sends out one extra ring per die
+   beyond that, layered onto the same box-shadow keyframes as a second,
+   much shorter, delayed animation — box-shadow only, never transform,
+   so it can never fight a die's own fall/pop transform. --extra-pulses
+   is an iteration count: 0 for an exact 3-die merge reproduces today's
+   single ring exactly, since an animation given 0 iterations never
+   runs. */
 .die--merge-target {
-  animation: die-merge-target-pulse var(--cfg-pulse-duration, 220ms) ease-out;
+  animation:
+    die-merge-target-pulse var(--cfg-pulse-duration, 220ms) ease-out,
+    die-merge-target-pulse var(--cfg-pulse-burst-duration, 70ms) ease-out var(--cfg-pulse-duration, 220ms) var(--extra-pulses, 0);
 }
 
 /* Impact scales with the mass the merge actually released (see

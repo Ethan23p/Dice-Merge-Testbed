@@ -38,6 +38,17 @@ const DiceMergeAnimate = (() => {
   // never actually crossed. `zIndex` layers a longer-traveling die
   // above a shorter one so a convergence reads as sliding over, not
   // under, dice that arrived first.
+  //
+  // Driven through the standalone `translate` property, not the
+  // `transform` shorthand: a die that just survived a merge is still
+  // mid-flight on its own `die--merge-pop` scale-up (styles.css), and a
+  // CSS animation always wins over an inline style for whatever
+  // property it's animating. `transform` here would have gone
+  // nowhere for the pop's whole duration — the die would sit frozen
+  // mid-pulse while gravity moved on without it, until the next
+  // render snapped it into place. `translate` and `transform: scale()`
+  // are independent properties that compose, so the fall and the pop
+  // now play together instead of one blocking the other.
   function flyDieAlongPath(boardEl, dieEl, path, hopMs, zIndex) {
     const segments = path.length - 1;
     if (segments <= 0) return;
@@ -56,8 +67,8 @@ const DiceMergeAnimate = (() => {
       if (!from || !to) return;
       totalDx += to.x - from.x;
       totalDy += to.y - from.y;
-      dieEl.style.transition = `transform ${hopMs}ms ${i === segments ? 'cubic-bezier(.4, 0, .2, 1)' : 'linear'}`;
-      dieEl.style.transform = `translate(${totalDx}px, ${totalDy}px)`;
+      dieEl.style.transition = `translate ${hopMs}ms ${i === segments ? 'cubic-bezier(.4, 0, .2, 1)' : 'linear'}`;
+      dieEl.style.translate = `${totalDx}px ${totalDy}px`;
       if (i < segments) window.setTimeout(step, hopMs);
     }
     requestAnimationFrame(step);
@@ -74,14 +85,25 @@ const DiceMergeAnimate = (() => {
     return hopDurationForValue(maxValue);
   }
 
+  // A merge beyond the 3-die baseline sends out one extra rapid pulse
+  // per die past that (styles.css's --extra-pulses iteration count) —
+  // the bigger the cluster, the more it visibly builds before landing.
+  const EXTRA_PULSE_BASELINE = 3;
+
+  function extraPulseCount(pop) {
+    return Math.max(0, (pop.size || 0) - EXTRA_PULSE_BASELINE);
+  }
+
   // Highlights the cells this step's dice are converging on or landing
   // on — pure DOM class toggling against whatever's already rendered
   // (the previous step's board), never a re-render, so it never
   // disturbs a fly animation already in progress.
   function highlightTargets(boardEl, pops) {
-    pops.forEach(({ r, c }) => {
-      const die = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"] .die`);
-      if (die) die.classList.add('die--merge-target');
+    pops.forEach((pop) => {
+      const die = boardEl.querySelector(`.cell[data-r="${pop.r}"][data-c="${pop.c}"] .die`);
+      if (!die) return;
+      die.style.setProperty('--extra-pulses', String(extraPulseCount(pop)));
+      die.classList.add('die--merge-target');
     });
   }
 
@@ -125,7 +147,18 @@ const DiceMergeAnimate = (() => {
       highlightTargets(boardEl, step.pops);
       const hopMs = stepHopMs(step);
       const maxSegments = step.moves.reduce((max, m) => Math.max(max, m.path.length - 1), 0);
-      const flightMs = Math.min(CFG.get('settleMaxMs'), maxSegments * hopMs);
+      // A big cluster's rapid-pulse train (highlightTargets, above) can
+      // outlast the dice's own flight to it — a one-hop convergence
+      // flies in ~200ms but an 8-die cluster's pulses alone take longer
+      // than that. Reveal waits for whichever finishes last, so
+      // renderBoard's innerHTML reset (which would cut a pulse train
+      // off mid-burst) never fires early. Still capped by settleMaxMs
+      // so an extreme cluster size can't stall the whole cascade.
+      const maxPulseTrainMs = step.pops.reduce(
+        (max, pop) => Math.max(max, CFG.get('pulseDurationMs') + extraPulseCount(pop) * CFG.get('pulseBurstDurationMs')),
+        0
+      );
+      const flightMs = Math.min(CFG.get('settleMaxMs'), Math.max(maxSegments * hopMs, maxPulseTrainMs));
       animateMoves(boardEl, step.moves, hopMs);
 
       window.setTimeout(() => {
