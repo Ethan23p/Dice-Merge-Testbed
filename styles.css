@@ -555,10 +555,16 @@ body {
   background: #2a2a2a;
 }
 
+/* Bottom padding clears the toggle button's own screen position, not
+   just the safe area — #config-toggle-btn sits at z-index 70 (above
+   this panel's 60) so it stays clickable while the panel is open, but
+   that also means it visually sits ON TOP of any row that scrolls
+   into the same spot. Without this, the last rows of a long list would
+   populate directly behind the button instead of above it. */
 .config-body {
   flex: 1 1 auto;
   overflow-y: auto;
-  padding: 4px 14px calc(24px + env(safe-area-inset-bottom));
+  padding: 4px 14px calc(96px + env(safe-area-inset-bottom));
   -webkit-overflow-scrolling: touch;
 }
 
@@ -614,6 +620,16 @@ body {
 .config-row-control input[type="range"] {
   flex: 1 1 auto;
   accent-color: var(--accent);
+}
+
+.config-row-control select {
+  flex: 1 1 auto;
+  background: #1e1e1e;
+  color: var(--text);
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
 }
 
 /* Bool-item control: same switch look as .pin-toggle, but bigger since

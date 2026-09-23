@@ -17,6 +17,7 @@
   const S = DiceMergeState;
   const R = DiceMergeRender;
   const P = DiceMergePhysics;
+  const Anim = DiceMergeAnimate;
   const CFG = DiceMergeConfig;
 
   const boardEl = document.getElementById('board');
@@ -44,11 +45,7 @@
   // the config panel (see config.js) via CFG.get(id) at the point of
   // use, rather than being a fixed const read once — so dragging a
   // slider in the panel takes effect on the very next rotate/merge/
-  // drag, no reload needed. hopDurationForValue reads its two inputs
-  // the same way, every time it's called.
-  function hopDurationForValue(value) {
-    return Math.min(CFG.get('hopMaxMs'), D.scaleWithMass(CFG.get('hopBaseMs'), D.massForValue(value)));
-  }
+  // drag, no reload needed.
 
   function loadSaved() {
     try {
@@ -101,7 +98,6 @@
       score: g.score || 0,
       moves: g.moves || 0,
       gameOver: !!g.gameOver,
-      lastMerges: [],
       rng: Math.random,
     };
   }
@@ -114,8 +110,8 @@
   let bestScore = saved.bestScore || 0;
   let state = restoredState(saved, config) || S.createState(config);
 
-  function render(boardOptions = {}) {
-    R.renderBoard(boardEl, state, boardOptions);
+  function render() {
+    R.renderBoard(boardEl, state.board, {});
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     // Only this general render path means "a piece genuinely entered
     // the slot" (a new game, or the next piece moving up after a
@@ -141,202 +137,47 @@
   }
 
   // True from the moment a merge cascade starts animating until its
-  // final wave has visually resolved. Placement, rotation, New Game and
+  // final step has visually resolved. Placement, rotation, New Game and
   // a board-size change all read state synchronously and would produce
-  // a perfectly consistent result if run mid-cascade — but the wave
-  // animation's own intermediate re-renders (see playMergeWaves) draw
-  // from a `workingBoard` snapshot taken back when the cascade started,
-  // not from live state, so an action that lands in that window could
-  // get visually clobbered by the cascade's next scheduled frame. Cheaper
-  // to just block input for the (sub-second) duration of the cascade than
-  // to make every intermediate render re-derive itself from live state.
-  let mergeAnimating = false;
-
-  function finishMergeAnimation() {
-    mergeAnimating = false;
-    render();
-  }
+  // a perfectly consistent result if run mid-timeline — but Anim's
+  // intermediate re-renders draw from each step's own board snapshot,
+  // not from whatever main.js might do to `state` meanwhile, so an
+  // action that lands in that window could get visually clobbered by
+  // the timeline's next scheduled frame. Cheaper to just block input
+  // for the (sub-second) duration of the playback than to make every
+  // intermediate render re-derive itself from live state.
 
   function newGame() {
-    // Resetting state out from under a cascade still writing to
-    // workingBoard is exactly the race mergeAnimating exists to
-    // prevent, so this quietly no-ops during one, the same way a
-    // pointerdown does.
-    if (mergeAnimating) return;
+    // Resetting state out from under a playing timeline is exactly the
+    // race Anim.isPlaying() exists to prevent, so this quietly no-ops
+    // during one, the same way a pointerdown does.
+    if (Anim.isPlaying()) return;
     state = S.createState(config);
     persistGameState();
     render();
   }
 
-  // Places the current piece and animates the result. A merge-free
-  // placement just appears — no landing animation (see render.js). A
-  // merge instead plays out wave by wave (see S.resolveMerges): each
-  // wave's consumed dice fly to their survivor along their own real
-  // lateral connectivity, and the next wave only starts once this one
-  // has visually resolved, so a cascade never appears to begin before
-  // the merge that caused it has finished. `selected` is the absolute
-  // cell the player was holding — passed through so a forming merge
-  // converges there rather than on an arbitrary cell of the piece.
+  // Places the current piece and animates the result. S.placePiece
+  // returns the whole timeline of what that caused — the piece
+  // landing, its own merge cascade, then whatever gravity does — as
+  // one ordered list of steps (see state.js). A step with nothing in
+  // it beyond the bare landing just appears, same as before (no
+  // landing animation); anything longer is handed to Anim to play
+  // step by step. `selected` is the absolute cell the player was
+  // holding — passed through so a forming merge converges there rather
+  // than on an arbitrary cell of the piece.
   function commitPlacement(target, selected) {
-    const piece = state.queue[0];
-    const preBoard = state.board.map((row) => row.slice());
-    const placedCells = S.shapeCellsAt(piece, target.r, target.c);
-
-    S.placePiece(state, target.r, target.c, selected);
+    const { steps } = S.placePiece(state, target.r, target.c, selected);
     persistGameState();
-    const merges = state.lastMerges;
 
-    if (!merges.length) {
+    if (steps.length <= 1) {
       render();
       return;
     }
 
-    const workingBoard = preBoard.map((row) => row.slice());
-    placedCells.forEach(({ r, c, value }) => {
-      workingBoard[r][c] = value;
-    });
-
-    const waves = [];
-    merges.forEach((m) => {
-      (waves[m.wave] || (waves[m.wave] = [])).push(m);
-    });
-
-    mergeAnimating = true;
-    R.renderBoard(
-      boardEl,
-      { config: state.config, board: workingBoard, lastMerges: [] },
-      { targetCells: merges.map((m) => ({ r: m.r, c: m.c })) }
-    );
     R.renderQueue(currentPieceEl, nextPieceEl, state);
     R.renderScore(scoreEl, state);
-
-    // The placed piece has no landing animation to wait out, so the
-    // very frame that shows it placed is already the frame a merge
-    // converges from — released and placed IS the start of the merge,
-    // unless the panel has dialed in a deliberate pause here.
-    const landingBeatMs = CFG.get('landingBeatMs');
-    if (landingBeatMs > 0) {
-      window.setTimeout(() => playMergeWaves(waves, 0, workingBoard), landingBeatMs);
-    } else {
-      playMergeWaves(waves, 0, workingBoard);
-    }
-  }
-
-  // Plays one wave's convergence, waits for it to visually resolve,
-  // then renders the intermediate board that wave produced before
-  // recursing into the next wave — or, once every wave has played,
-  // renders the true final state. (Waves are synchronized as whole
-  // batches, not per independent cascade chain: if a single placement
-  // starts two unrelated clusters that both happen to cascade, the
-  // faster one waits for the slower one in its wave before its own
-  // cascade starts. A rare case, and still correct — just not maximally
-  // parallel.)
-  function playMergeWaves(waves, waveIndex, workingBoard) {
-    const waveMerges = waves[waveIndex];
-    if (!waveMerges) {
-      finishMergeAnimation();
-      return;
-    }
-
-    // This wave's total flight time is however long its longest actual
-    // path takes at a legible per-hop pace — not a flat mass-based
-    // guess — so the next wave never starts before every die in this
-    // one has visibly finished traveling.
-    let waveMs = 0;
-    waveMerges.forEach((m) => {
-      const hopMs = hopDurationForValue(m.value);
-      const maxHops = m.consumed.reduce((max, c) => Math.max(max, c.path.length - 1), 0);
-      waveMs = Math.max(waveMs, maxHops * hopMs);
-    });
-    waveMs = Math.min(CFG.get('settleMaxMs'), waveMs);
-
-    animateMergeConvergence(waveMerges);
-
-    window.setTimeout(() => {
-      // Every consumed die has now arrived and is stacked on its
-      // survivor (see flyDieAlongPath) — hold that a beat so "they've
-      // gathered" reads as its own moment before the stack quietly
-      // clears (nothing to see: it's hidden underneath the topmost
-      // die already) and the survivor visibly transforms.
-      window.setTimeout(() => {
-        const nextWave = waves[waveIndex + 1];
-        if (!nextWave) {
-          finishMergeAnimation();
-          return;
-        }
-        waveMerges.forEach((m) => {
-          m.consumed.forEach(({ r, c }) => {
-            workingBoard[r][c] = 0;
-          });
-          workingBoard[m.r][m.c] = m.value;
-        });
-        R.renderBoard(
-          boardEl,
-          { config: state.config, board: workingBoard, lastMerges: waveMerges },
-          { targetCells: nextWave.map((m) => ({ r: m.r, c: m.c })) }
-        );
-        playMergeWaves(waves, waveIndex + 1, workingBoard);
-      }, CFG.get('settleBeatMs'));
-    }, waveMs);
-  }
-
-  function cellCenter(r, c) {
-    const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
-    if (!el) return null;
-    const rect = el.getBoundingClientRect();
-    return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-  }
-
-  // Flies each consumed die to its survivor along the exact lateral
-  // path that connected it to the cluster (resolveMerges' `path`) —
-  // never a diagonal cut through cells it was never linked to. A die
-  // farther from the survivor (bigger `hop`) renders above nearer
-  // ones, so it visibly slides over them as the cluster gathers rather
-  // than passing beneath. Every hop travels at the same pace
-  // (hopDurationForValue), so a longer path just takes proportionally
-  // longer rather than being squeezed into the same total time.
-  function animateMergeConvergence(merges) {
-    merges.forEach((m) => {
-      const hopMs = hopDurationForValue(m.value);
-      m.consumed.forEach(({ path, hop }) => {
-        const start = path[0];
-        const dieEl = boardEl.querySelector(`.cell[data-r="${start.r}"][data-c="${start.c}"] .die`);
-        if (dieEl) flyDieAlongPath(dieEl, path, hopMs, hop);
-      });
-    });
-  }
-
-  // A consumed die never shrinks or fades — it slides at constant size
-  // and lands stacked exactly on its survivor (z-index by hop keeps
-  // farther dice on top), the way a physical die sliding across a
-  // table would. It stays there, fully solid, through the settle beat
-  // in playMergeWaves; only once that beat ends does the wave's
-  // re-render clear the now-hidden stack and pop the survivor — so
-  // nothing here ever needs to fight over `transform` with another
-  // animation (placed dice have none — see render.js).
-  function flyDieAlongPath(dieEl, path, hopMs, hop) {
-    const segments = path.length - 1;
-    if (segments <= 0) return;
-
-    dieEl.style.position = 'relative';
-    dieEl.style.zIndex = String(5 + hop);
-
-    let totalDx = 0;
-    let totalDy = 0;
-    let i = 0;
-
-    function step() {
-      const from = cellCenter(path[i].r, path[i].c);
-      const to = cellCenter(path[i + 1].r, path[i + 1].c);
-      i += 1;
-      if (!from || !to) return;
-      totalDx += to.x - from.x;
-      totalDy += to.y - from.y;
-      dieEl.style.transition = `transform ${hopMs}ms ${i === segments ? 'cubic-bezier(.4, 0, .2, 1)' : 'linear'}`;
-      dieEl.style.transform = `translate(${totalDx}px, ${totalDy}px)`;
-      if (i < segments) window.setTimeout(step, hopMs);
-    }
-    requestAnimationFrame(step);
+    Anim.playTimeline(boardEl, steps, render);
   }
 
   let rotateSettling = false; // true while dice are still sliding into their new grid slots after a rotation
@@ -575,7 +416,7 @@
   }
 
   function onPointerDown(e) {
-    if (state.gameOver || drag || mergeAnimating) return;
+    if (state.gameOver || drag || Anim.isPlaying()) return;
     // Picking up the piece is never blocked by an animation still
     // playing on it — a mid-flight rotate or a not-yet-settled
     // snapback is interrupted (not waited out) so the piece is always
@@ -758,6 +599,7 @@
 
   function formatValue(item, value) {
     if (item.type === 'bool') return value ? 'On' : 'Off';
+    if (item.type === 'select') return item.options.find((o) => o.value === value)?.label ?? String(value);
     return `${value.toFixed(decimalsFor(item.step))}${item.unit}`;
   }
 
@@ -852,6 +694,20 @@
         syncValueDisplays(item.id);
       });
       control.appendChild(bool.label);
+    } else if (item.type === 'select') {
+      input = document.createElement('select');
+      item.options.forEach((opt) => {
+        const option = document.createElement('option');
+        option.value = opt.value;
+        option.textContent = opt.label;
+        input.appendChild(option);
+      });
+      input.value = String(CFG.get(item.id));
+      input.addEventListener('change', () => {
+        CFG.set(item.id, input.value);
+        syncValueDisplays(item.id);
+      });
+      control.appendChild(input);
     } else {
       input = document.createElement('input');
       input.type = 'range';
@@ -868,7 +724,7 @@
     control.appendChild(buildPinToggle(item, scope));
     row.appendChild(control);
 
-    if (!compact && item.type !== 'bool') {
+    if (!compact && item.type !== 'bool' && item.type !== 'select') {
       const bounds = document.createElement('div');
       bounds.className = 'config-row-bounds';
       const lo = document.createElement('span');
