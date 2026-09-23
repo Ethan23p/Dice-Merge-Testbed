@@ -141,44 +141,42 @@ const DiceMergeState = (() => {
   // Starting from the cells a piece just occupied, merges any
   // same-value cluster of MERGE_MIN_CLUSTER+ into a single value+1 die
   // at the cell that triggered it (see D.resolveClusterMass) — always
-  // exactly one tier, however large the cluster. Re-checks that cell
+  // exactly one tier, however large the cluster. Re-checks survivors
   // afterward so a merge can chain into a bigger neighboring cluster.
   //
-  // The worklist carries a `wave` per entry (0 for the seeds, N+1 for
-  // a merge only possible because a wave-N merge produced the die it
-  // consumes) purely to batch this call's own steps in causal order —
-  // it never leaves this function. Because the worklist is FIFO and a
-  // push always carries the popped item's wave + 1, every wave-N entry
-  // is processed before any wave-(N+1) entry exists, so a wave
-  // boundary is exactly "the next popped item's wave changed"; that's
-  // where a step gets flushed; a trailing flush after the loop catches
-  // the last wave (no boundary follows it).
+  // Runs in waves: within a wave, every cluster is found by flooding
+  // the board as it stood *before* this wave touched it, so a cluster
+  // can never flood into a die another cluster in the same wave just
+  // created (clusters found this way can't overlap — floodCluster
+  // covers every cell it could reach, so once one seed's cluster is
+  // marked `claimed`, no other seed this wave can reach into it). Only
+  // once every cluster for the wave is known are they all applied
+  // together and flushed as one step. The next wave's seeds are this
+  // wave's survivors, so a merge can still chain — just never within
+  // the wave that produced the die it would consume.
   function resolveMerges(state, seedCells) {
     let scoreGained = 0;
     const steps = [];
-    let waveMoves = [];
-    let wavePops = [];
-    let currentWave = 0;
+    let frontier = seedCells.slice();
 
-    function flushWave() {
-      if (wavePops.length) {
-        steps.push({ board: state.board.map((row) => row.slice()), moves: waveMoves, pops: wavePops });
+    while (frontier.length) {
+      const claimed = new Set();
+      const clusters = [];
+      for (const [r, c] of frontier) {
+        const key = `${r},${c}`;
+        if (claimed.has(key)) continue;
+        if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
+        const cluster = floodCluster(state, r, c);
+        cluster.forEach((cell) => claimed.add(`${cell.r},${cell.c}`));
+        if (cluster.length >= D.params.mergeMinCluster) clusters.push({ seed: [r, c], cluster });
       }
-      waveMoves = [];
-      wavePops = [];
-    }
+      if (!clusters.length) break;
 
-    const worklist = seedCells.map((cell) => ({ cell, wave: 0 }));
-    while (worklist.length) {
-      const { cell, wave } = worklist.shift();
-      if (wave !== currentWave) {
-        flushWave();
-        currentWave = wave;
-      }
-      const [r, c] = cell;
-      if (!inBounds(state, r, c) || state.board[r][c] === 0) continue;
-      const cluster = floodCluster(state, r, c);
-      if (cluster.length >= D.params.mergeMinCluster) {
+      const moves = [];
+      const pops = [];
+      const nextFrontier = [];
+      for (const { seed, cluster } of clusters) {
+        const [r, c] = seed;
         const value = state.board[r][c];
         const { newValue, massReleased, score } = D.resolveClusterMass(value, cluster.length);
 
@@ -201,15 +199,16 @@ const DiceMergeState = (() => {
 
         cluster
           .filter((cell) => !(cell.r === r && cell.c === c))
-          .forEach((cell) => waveMoves.push({ value, path: pathToRoot(cell) }));
+          .forEach((cell) => moves.push({ value, path: pathToRoot(cell) }));
         for (const cell of cluster) state.board[cell.r][cell.c] = 0;
         state.board[r][c] = newValue;
         scoreGained += score;
-        wavePops.push({ r, c, massReleased });
-        worklist.push({ cell: [r, c], wave: wave + 1 });
+        pops.push({ r, c, massReleased });
+        nextFrontier.push([r, c]);
       }
+      steps.push({ board: state.board.map((row) => row.slice()), moves, pops });
+      frontier = nextFrontier;
     }
-    flushWave();
     return { scoreGained, steps };
   }
 
@@ -287,12 +286,20 @@ const DiceMergeState = (() => {
       if (moves.length) {
         steps.push({ board: state.board.map((row) => row.slice()), moves, pops: [] });
       }
+      // Seeded in resting-edge-first order (furthest along the gravity
+      // vector first), not row-major — the first seed to reach an
+      // unclaimed cluster becomes its survivor (see resolveMerges), so
+      // this is what makes a cluster resolve onto the cell it's
+      // already resting against instead of an arbitrary member that
+      // then has to fall again on the next pass.
+      const { dr: gdr, dc: gdc } = GRAVITY_VECTORS[direction];
       const seeds = [];
       for (let r = 0; r < size; r++) {
         for (let c = 0; c < size; c++) {
           if (state.board[r][c] !== 0) seeds.push([r, c]);
         }
       }
+      seeds.sort(([r1, c1], [r2, c2]) => (r2 * gdr + c2 * gdc) - (r1 * gdr + c1 * gdc));
       const result = resolveMerges(state, seeds);
       scoreGained += result.scoreGained;
       steps.push(...result.steps);
