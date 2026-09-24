@@ -1,14 +1,14 @@
 /*
- * The Tuning panel and pinned HUD, built from DiceMergeConfig.SCHEMA.
- * A config item can have several controls at once (panel row, HUD row,
- * or any control passed to bind()); all of them stay in sync.
+ * The Tuning panel, built from the config schema, plus the pinned-row HUD.
+ * Every input bound to an id is kept in sync from CFG, wherever it lives.
  */
 const DiceMergePanel = (() => {
   const CFG = DiceMergeConfig;
 
-  // id -> Set<{ input, valueEl, scope, onSync }>
+  // id -> Set of { input, valueEl, scope, onSync }
   const controls = new Map();
-  // id -> Set<{ input, scope }>
+
+  // id -> Set of pin buttons
   const pins = new Map();
 
   let bodyEl;
@@ -46,7 +46,6 @@ const DiceMergePanel = (() => {
     const item = CFG.item(id);
     const value = CFG.get(id);
     entry(controls, id).forEach(({ input, valueEl, onSync }) => {
-      // Don't fight a slider the user is dragging.
       if (document.activeElement !== input) {
         if (item.type === 'bool') input.checked = Boolean(value);
         else input.value = String(value);
@@ -69,7 +68,7 @@ const DiceMergePanel = (() => {
     });
   }
 
-  // Attaches an existing control (e.g. in the Settings dialog) to a config item.
+  // Keeps a control outside the panel (e.g. in Settings) in sync with an id.
   function bind(id, input, { onSync } = {}) {
     register(id, input, { scope: 'external', onSync });
     sync(id);
@@ -174,9 +173,10 @@ const DiceMergePanel = (() => {
     syncAll();
   }
 
+  // Inside the artifact viewer, downloads go through its capability.
   async function saveFile(text) {
     const filename = 'dice-merge-config.txt';
-    // The artifact viewer's sandbox blocks anchor downloads.
+
     if (window.claude?.use) {
       try {
         const downloads = await window.claude.use('downloads');

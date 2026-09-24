@@ -1,8 +1,5 @@
 /*
- * Rendering: reads state, writes DOM. No game rules live here — a die is
- * drawn purely from its numeric value, and a piece purely from its cell
- * offsets, via the data tables in data.js. New values or shapes render
- * correctly with zero changes to this file.
+ * State to DOM. A die is drawn from its value alone; no game rules here.
  */
 const DiceMergeRender = (() => {
   const D = DiceMergeData;
@@ -38,10 +35,8 @@ const DiceMergeRender = (() => {
     return die;
   }
 
-  // Renders a piece as a small grid matching its own bounding box, so
-  // a 1-, 2-, or 3-cell piece all read as one connected shape. Every
-  // slot (die or empty spacer) carries its own (dr, dc) offset so a
-  // drag can tell which part of the piece was grabbed.
+  // Laid out on the piece's bounding box; every slot carries its (dr, dc) so a
+  // drag knows which die was grabbed.
   function buildPieceNode(piece, variant) {
     const rows = Math.max(...piece.cells.map((c) => c.dr)) + 1;
     const cols = Math.max(...piece.cells.map((c) => c.dc)) + 1;
@@ -65,35 +60,17 @@ const DiceMergeRender = (() => {
     return wrap;
   }
 
-  // Board cells are plain, non-interactive tiles — placement now
-  // happens by dragging the current piece over the board (see main.js),
-  // so a cell only needs to display its die and expose its coordinates
-  // for the drag controller's hit-testing. A placed die just appears —
-  // no landing animation — so the moment of release reads as directly
-  // placing the piece rather than watching it land first.
-  //
-  // Takes a plain board matrix, not a game-state object — a board size
-  // is just `board.length`, and this function has no other reason to
-  // know about score, queue, or anything else state carries. The
-  // animator (animate.js) is the only caller that ever passes
-  // `options`, when it's mid-timeline: `pops` marks cells to flash as
-  // newly merged (see the `steps` shape in state.js — same shape,
-  // passed straight through) and `targetCells` marks cells a forming
-  // merge is about to converge on, so the flash and the fly-together
-  // motion it precedes land on the same cells the caller already knows
-  // about, not ones re-derived here.
   function cellAt(boardEl, r, c) {
     return boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
   }
 
+  // Takes a board matrix rather than state so the animator can draw any step.
+  // `pops` flash as fresh merges, scaled by the mass they released.
   function renderBoard(boardEl, board, options = {}) {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', board.length);
     const pops = options.pops || [];
-    const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
-    // The mass released by the merge (see D.resolveClusterMass) drives
-    // how hard the merge-pop impact hits — a bigger release visibly
-    // lands with more force, the same quantity that fed the score.
+
     const impactByKey = new Map(pops.map((p) => [`${p.r},${p.c}`, p.massReleased]));
 
     board.forEach((row, r) => {
@@ -111,7 +88,6 @@ const DiceMergeRender = (() => {
             die.classList.add('die--merge-pop');
             die.style.setProperty('--merge-impact', String(impactByKey.get(key)));
           }
-          if (targets.has(key)) die.classList.add('die--merge-target');
           cell.appendChild(die);
         }
         boardEl.appendChild(cell);
@@ -123,8 +99,7 @@ const DiceMergeRender = (() => {
     currentSlotEl.innerHTML = '';
     currentSlotEl.appendChild(buildPieceNode(state.queue[0], 'current'));
     nextSlotEl.innerHTML = '';
-    // Guards a shorter-than-2 queue (config.queueLength isn't actually
-    // exposed anywhere today, but nothing enforces that it stays 2).
+
     if (state.queue[1]) nextSlotEl.appendChild(buildPieceNode(state.queue[1], 'next'));
   }
 
