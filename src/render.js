@@ -82,6 +82,10 @@ const DiceMergeRender = (() => {
   // merge is about to converge on, so the flash and the fly-together
   // motion it precedes land on the same cells the caller already knows
   // about, not ones re-derived here.
+  function cellAt(boardEl, r, c) {
+    return boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+  }
+
   function renderBoard(boardEl, board, options = {}) {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', board.length);
@@ -128,5 +132,5 @@ const DiceMergeRender = (() => {
     scoreEl.textContent = String(state.score);
   }
 
-  return { buildDieNode, buildPieceNode, renderBoard, renderQueue, renderScore };
+  return { cellAt, buildDieNode, buildPieceNode, renderBoard, renderQueue, renderScore };
 })();

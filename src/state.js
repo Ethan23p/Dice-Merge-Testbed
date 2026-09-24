@@ -39,6 +39,9 @@
 const DiceMergeState = (() => {
   const D = DiceMergeData;
 
+  const key = (r, c) => `${r},${c}`;
+  const copyBoard = (board) => board.map((row) => row.slice());
+
   function createState(config = D.DEFAULT_CONFIG, rng = Math.random) {
     const size = config.boardSize;
     const board = Array.from({ length: size }, () => Array(size).fill(0));
@@ -101,7 +104,7 @@ const DiceMergeState = (() => {
   // once the whole cluster is known, not baked into how it was found.
   function floodCluster(state, r, c) {
     const value = state.board[r][c];
-    const visited = new Set([`${r},${c}`]);
+    const visited = new Set([key(r, c)]);
     const cluster = [{ r, c }];
     const queue = [{ r, c }];
     while (queue.length) {
@@ -109,11 +112,11 @@ const DiceMergeState = (() => {
       for (const [dr, dc] of D.DIRECTIONS) {
         const nr = cr + dr;
         const nc = cc + dc;
-        const key = `${nr},${nc}`;
-        if (visited.has(key)) continue;
+        const k = key(nr, nc);
+        if (visited.has(k)) continue;
         if (!inBounds(state, nr, nc)) continue;
         if (state.board[nr][nc] !== value) continue;
-        visited.add(key);
+        visited.add(k);
         cluster.push({ r: nr, c: nc });
         queue.push({ r: nr, c: nc });
       }
@@ -133,10 +136,10 @@ const DiceMergeState = (() => {
     const clusters = [];
     for (let r = 0; r < size; r++) {
       for (let c = 0; c < size; c++) {
-        const key = `${r},${c}`;
-        if (visited.has(key) || state.board[r][c] === 0) continue;
+        const k = key(r, c);
+        if (visited.has(k) || state.board[r][c] === 0) continue;
         const cluster = floodCluster(state, r, c);
-        cluster.forEach((cell) => visited.add(`${cell.r},${cell.c}`));
+        cluster.forEach((cell) => visited.add(key(cell.r, cell.c)));
         if (cluster.length >= D.params.mergeMinCluster) clusters.push(cluster);
       }
     }
@@ -159,8 +162,9 @@ const DiceMergeState = (() => {
   // via the game's own rng — never by scan order.
   function clusterSurvivor(cluster, heldCell, heldPieceCells, rng) {
     function tier(cell) {
-      if (heldCell && cell.r === heldCell.r && cell.c === heldCell.c) return 0;
-      if (heldPieceCells.has(`${cell.r},${cell.c}`)) return 1;
+      const k = key(cell.r, cell.c);
+      if (k === heldCell) return 0;
+      if (heldPieceCells.has(k)) return 1;
       return 2;
     }
     let bestTier = 2;
@@ -176,31 +180,31 @@ const DiceMergeState = (() => {
   // adjacency within the cluster, the same connectivity that made
   // these cells a cluster in the first place.
   function pathsFromRoot(cluster, root) {
-    const byKey = new Map(cluster.map((cell) => [`${cell.r},${cell.c}`, cell]));
+    const byKey = new Map(cluster.map((cell) => [key(cell.r, cell.c), cell]));
     const parent = new Map();
-    const visited = new Set([`${root.r},${root.c}`]);
+    const visited = new Set([key(root.r, root.c)]);
     const queue = [root];
     while (queue.length) {
       const cur = queue.shift();
       for (const [dr, dc] of D.DIRECTIONS) {
         const nr = cur.r + dr;
         const nc = cur.c + dc;
-        const key = `${nr},${nc}`;
-        if (visited.has(key) || !byKey.has(key)) continue;
-        visited.add(key);
-        parent.set(key, cur);
-        queue.push(byKey.get(key));
+        const k = key(nr, nc);
+        if (visited.has(k) || !byKey.has(k)) continue;
+        visited.add(k);
+        parent.set(k, cur);
+        queue.push(byKey.get(k));
       }
     }
     const paths = new Map();
     cluster.forEach((cell) => {
       const path = [{ r: cell.r, c: cell.c }];
       let cur = cell;
-      while (parent.has(`${cur.r},${cur.c}`)) {
-        cur = parent.get(`${cur.r},${cur.c}`);
+      while (parent.has(key(cur.r, cur.c))) {
+        cur = parent.get(key(cur.r, cur.c));
         path.push({ r: cur.r, c: cur.c });
       }
-      paths.set(`${cell.r},${cell.c}`, path);
+      paths.set(key(cell.r, cell.c), path);
     });
     return paths;
   }
@@ -232,16 +236,16 @@ const DiceMergeState = (() => {
     const pops = [];
     const nextHeldPieceCells = new Set(heldPieceCells);
     applications.forEach(({ cluster, survivor, value, newValue, massReleased, score, paths }) => {
-      const touchesPiece = cluster.some((cell) => nextHeldPieceCells.has(`${cell.r},${cell.c}`));
+      const touchesPiece = cluster.some((cell) => nextHeldPieceCells.has(key(cell.r, cell.c)));
       cluster
         .filter((cell) => !(cell.r === survivor.r && cell.c === survivor.c))
-        .forEach((cell) => moves.push({ value, path: paths.get(`${cell.r},${cell.c}`) }));
+        .forEach((cell) => moves.push({ value, path: paths.get(key(cell.r, cell.c)) }));
       cluster.forEach((cell) => {
         state.board[cell.r][cell.c] = 0;
-        nextHeldPieceCells.delete(`${cell.r},${cell.c}`);
+        nextHeldPieceCells.delete(key(cell.r, cell.c));
       });
       state.board[survivor.r][survivor.c] = newValue;
-      if (touchesPiece) nextHeldPieceCells.add(`${survivor.r},${survivor.c}`);
+      if (touchesPiece) nextHeldPieceCells.add(key(survivor.r, survivor.c));
       scoreGained += score;
       pops.push({ r: survivor.r, c: survivor.c, massReleased, size: cluster.length });
     });
@@ -302,30 +306,13 @@ const DiceMergeState = (() => {
     return moves;
   }
 
-  // Follows the held cell (the die the player is actually holding —
-  // see placePiece's `selected`) through a shift: a die only ever
-  // moves along the two-point path a gravity slide gives it, so
-  // finding the move whose path starts there and taking its endpoint
-  // is exactly where it ended up. Unchanged if nothing found it, since
-  // a die a shift doesn't touch doesn't move.
-  function advanceHeldCell(heldCell, moves) {
-    if (!heldCell) return null;
-    const move = moves.find((m) => m.path[0].r === heldCell.r && m.path[0].c === heldCell.c);
-    if (!move) return heldCell;
-    const end = move.path[move.path.length - 1];
-    return { r: end.r, c: end.c };
-  }
-
-  // Same idea as advanceHeldCell, but for the whole set of cells
-  // descended from the piece just placed (see `heldPieceCells`).
-  function advanceHeldPieceCells(heldPieceCells, moves) {
-    const next = new Set();
-    heldPieceCells.forEach((key) => {
-      const [r, c] = key.split(',').map(Number);
-      const move = moves.find((m) => m.path[0].r === r && m.path[0].c === c);
-      next.add(move ? `${move.path[move.path.length - 1].r},${move.path[move.path.length - 1].c}` : key);
-    });
-    return next;
+  // Where each die a shift moved ended up, keyed by where it started.
+  function shiftDestinations(moves) {
+    return new Map(moves.map(({ path }) => {
+      const from = path[0];
+      const to = path[path.length - 1];
+      return [key(from.r, from.c), key(to.r, to.c)];
+    }));
   }
 
   // The one settle loop, run after every placement: a fixed-point
@@ -349,8 +336,8 @@ const DiceMergeState = (() => {
   function settle(state, heldCellInit, heldPieceCellsInit) {
     const steps = [];
     let scoreGained = 0;
-    let heldCell = heldCellInit || null;
-    let heldPieceCells = heldPieceCellsInit ? new Set(heldPieceCellsInit) : new Set();
+    let heldCell = heldCellInit ? key(heldCellInit.r, heldCellInit.c) : null;
+    let heldPieceCells = new Set(heldPieceCellsInit || []);
     const gravityOn = D.params.gravityEnabled;
     const direction = D.params.gravityDirection;
 
@@ -358,9 +345,11 @@ const DiceMergeState = (() => {
       if (gravityOn) {
         const moves = shiftBoard(state, direction);
         if (moves.length) {
-          steps.push({ board: state.board.map((row) => row.slice()), moves, pops: [] });
-          heldCell = advanceHeldCell(heldCell, moves);
-          heldPieceCells = advanceHeldPieceCells(heldPieceCells, moves);
+          steps.push({ board: copyBoard(state.board), moves, pops: [] });
+          const dest = shiftDestinations(moves);
+          const follow = (k) => dest.get(k) || k;
+          heldCell = heldCell && follow(heldCell);
+          heldPieceCells = new Set([...heldPieceCells].map(follow));
           continue;
         }
       }
@@ -369,7 +358,7 @@ const DiceMergeState = (() => {
       const result = applyMergeGeneration(state, clusters, heldCell, heldPieceCells, state.rng);
       scoreGained += result.scoreGained;
       heldPieceCells = result.heldPieceCells;
-      steps.push({ board: state.board.map((row) => row.slice()), moves: result.moves, pops: result.pops });
+      steps.push({ board: copyBoard(state.board), moves: result.moves, pops: result.pops });
     }
     return { scoreGained, steps };
   }
@@ -423,9 +412,9 @@ const DiceMergeState = (() => {
     placedCells.forEach(({ r: rr, c: cc, value }) => {
       state.board[rr][cc] = value;
     });
-    const steps = [{ board: state.board.map((row) => row.slice()), moves: [], pops: [] }];
+    const steps = [{ board: copyBoard(state.board), moves: [], pops: [] }];
 
-    const heldPieceCells = new Set(placedCells.map(({ r: rr, c: cc }) => `${rr},${cc}`));
+    const heldPieceCells = new Set(placedCells.map(({ r: rr, c: cc }) => key(rr, cc)));
     const settleResult = settle(state, selected || null, heldPieceCells);
     state.score += settleResult.scoreGained;
     steps.push(...settleResult.steps);

@@ -78,44 +78,32 @@ const DiceMergeData = (() => {
     return Math.exp(-massForValue(value) / params.spawnTemperature);
   }
 
-  function rollSpawnValue(rng = Math.random) {
-    const weights = [];
-    let total = 0;
-    for (let value = 1; value <= params.spawnValuePool; value++) {
-      const w = spawnWeight(value);
-      weights.push(w);
-      total += w;
-    }
+  // Picks one of `items` with probability proportional to weightOf(item);
+  // the first item if every weight is zero.
+  function weightedPick(items, weightOf, rng) {
+    const weights = items.map(weightOf);
+    const total = weights.reduce((a, b) => a + b, 0);
+    if (!(total > 0)) return items[0];
     let roll = rng() * total;
-    for (let i = 0; i < weights.length; i++) {
-      if (roll < weights[i]) return i + 1;
+    for (let i = 0; i < items.length; i++) {
+      if (roll < weights[i]) return items[i];
       roll -= weights[i];
     }
-    return 1;
+    return items[items.length - 1];
   }
 
-  // Same weighted roll as rollSpawnValue, but excluding a set of
-  // already-used values — used by generatePiece when noRepeatInCluster
-  // is on. Falls back to an ordinary (possibly repeating) roll once the
-  // exclusion set covers the whole spawn pool, so a tiny pool combined
-  // with a big piece never hangs looking for a value that can't exist.
+  function spawnPool() {
+    return Array.from({ length: params.spawnValuePool }, (_, i) => i + 1);
+  }
+
+  function rollSpawnValue(rng = Math.random) {
+    return weightedPick(spawnPool(), spawnWeight, rng);
+  }
+
+  // Falls back to an unrestricted roll if everything is excluded.
   function rollSpawnValueExcluding(exclude, rng = Math.random) {
-    const values = [];
-    const weights = [];
-    let total = 0;
-    for (let value = 1; value <= params.spawnValuePool; value++) {
-      if (exclude.has(value)) continue;
-      values.push(value);
-      weights.push(spawnWeight(value));
-      total += weights[weights.length - 1];
-    }
-    if (values.length === 0) return rollSpawnValue(rng);
-    let roll = rng() * total;
-    for (let i = 0; i < weights.length; i++) {
-      if (roll < weights[i]) return values[i];
-      roll -= weights[i];
-    }
-    return values[values.length - 1];
+    const pool = spawnPool().filter((v) => !exclude.has(v));
+    return pool.length ? weightedPick(pool, spawnWeight, rng) : rollSpawnValue(rng);
   }
 
   // Real materials take longer to settle the more massive they are — a
@@ -155,13 +143,7 @@ const DiceMergeData = (() => {
   const PIECE_SIZE_WEIGHTS = [1, 2, 3].map((size) => ({ size, weight: 0 }));
 
   function rollPieceSize(rng = Math.random) {
-    const total = PIECE_SIZE_WEIGHTS.reduce((sum, e) => sum + e.weight, 0);
-    let roll = rng() * total;
-    for (const entry of PIECE_SIZE_WEIGHTS) {
-      if (roll < entry.weight) return entry.size;
-      roll -= entry.weight;
-    }
-    return PIECE_SIZE_WEIGHTS[0].size;
+    return weightedPick(PIECE_SIZE_WEIGHTS, (e) => e.weight, rng).size;
   }
 
   // Only meaningful for a 3-cell piece: picks values for its three dice

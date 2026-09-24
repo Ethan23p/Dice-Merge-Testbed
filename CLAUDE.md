@@ -19,7 +19,8 @@ global (`DiceMerge*`), and later modules read earlier ones.
 | `src/render.js` | `DiceMergeRender` | State → DOM. No game rules |
 | `src/physics.js` | `DiceMergePhysics` | Damped spring (rAF), used by drag snapback |
 | `src/animate.js` | `DiceMergeAnimate` | Plays a `steps` timeline on the board |
-| `src/main.js` | `start()` | Wiring: DOM events, drag/tap controller, persistence, Settings dialog, Tuning panel UI |
+| `src/panel.js` | `DiceMergePanel` | Tuning panel + pinned HUD; `bind()` attaches any other control to a config item |
+| `src/main.js` | `start()` | Wiring: DOM events, drag/tap controller, persistence, Settings dialog |
 
 ## Conventions
 
@@ -44,8 +45,8 @@ nothing (`'main'`, read via `CFG.get` at use time).
   `test/config.test.js` checks every variable is supplied). Players with a
   stored value for an id keep it until they reset.
 - The same config item can have several UI copies (Tuning panel, pinned HUD,
-  Settings dialog). All register in `main.js`'s `rowRegistry` by id so a
-  change in one updates the others — new copies must register too.
+  Settings dialog). All go through `DiceMergePanel` (`bind()` for anything outside
+  the panel), which keeps every copy in sync.
 - The Settings dialog shows board size (starts a new game) and the Gravity
   toggle + direction (applies on the next placement).
 
