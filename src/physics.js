@@ -1,21 +1,9 @@
 /*
- * Lightweight physics primitives shared by the drag controller and the
- * placement/rejection animations: a damped spring, stepped by
- * requestAnimationFrame rather than CSS transitions, so motion can
- * carry real velocity across state changes (drag -> release, cancel ->
- * snapback) instead of every gesture starting and stopping at rest.
+ * A damped spring stepped on requestAnimationFrame, used for the drag
+ * snapback. Force is divided by mass, so heavier pieces are laggier.
  */
 const DiceMergePhysics = (() => {
-  // Semi-implicit Euler integration of a damped spring — real F=ma, not
-  // a shortcut that assumes every dragged object weighs the same:
-  // spring force and damping force are divided by `mass` to get
-  // acceleration, exactly like a real spring-and-mass system. `mass`
-  // defaults to 1 so a caller that doesn't pass one gets the original
-  // behavior unchanged. Passing the actual game-mass of whatever's
-  // being dragged (see D.massForValue) means the same tuned stiffness/
-  // damping constants make heavier dice feel heavier — laggier to move,
-  // slower and bouncier to settle — without inventing a new per-tier
-  // multiplier; it falls out of the equation of motion.
+  // Semi-implicit Euler.
   function stepSpring(value, velocity, target, stiffness, damping, dt, mass = 1) {
     const force = (target - value) * stiffness - velocity * damping;
     const acceleration = force / mass;
@@ -24,10 +12,8 @@ const DiceMergePhysics = (() => {
     return { value: nextValue, velocity: nextVelocity };
   }
 
-  // Runs a spring to rest via rAF, calling onStep(value, velocity) each
-  // frame and onSettle() once it's close enough to target (or maxMs
-  // elapses, as a safety net against never-quite-settling configs).
-  // Returns a cancel function.
+  // Returns a cancel function. `maxMs` force-settles springs that never come to
+  // rest (e.g. zero damping).
   function runSpring({ from, velocity = 0, target, stiffness, damping, mass = 1, onStep, onSettle, maxMs = 2000 }) {
     let value = from;
     let vel = velocity;
@@ -37,6 +23,7 @@ const DiceMergePhysics = (() => {
 
     function frame(now) {
       if (cancelled) return;
+      // Clamped so a stalled frame can't make the integration explode.
       const dt = Math.min((now - lastT) / 1000, 1 / 30);
       lastT = now;
       const stepped = stepSpring(value, vel, target, stiffness, damping, dt, mass);

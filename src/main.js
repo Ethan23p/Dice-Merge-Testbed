@@ -1,16 +1,13 @@
 /*
- * Wiring: DOM events <-> state transitions <-> render, plus a pointer-
- * based drag controller for placing pieces. Owns persistence — best
- * score, chosen board size, and the game in progress itself, so a
- * reload resumes exactly where the player left off.
+ * Wiring: input, persistence, and the Settings dialog. The current piece
+ * is dragged onto the board, anchored by whichever die was grabbed; a
+ * press that never passes the drag threshold is a tap, which rotates.
  *
- * Interaction model: the current piece is dragged from its queue slot
- * onto the board; wherever a die of the piece is released determines
- * the anchor (not always the piece's own top-left cell — see
- * startDrag/updateDragPreview), so the placement matches whichever
- * part of the shape the player was actually holding. A press that
- * never moves past the drag threshold is treated as a tap, which
- * rotates the piece in place instead.
+ * Tunables are read with CFG.get(id) at each use, so the Tuning panel
+ * applies immediately.
+ *
+ * `hotData` is the artifact viewer's carried-over game after a
+ * republish (see the snapshot at the end); empty otherwise.
  */
 function start(hotData = {}) {
   const D = DiceMergeData;
@@ -37,12 +34,6 @@ function start(hotData = {}) {
 
   const STORAGE_KEY = 'dice-merge:v3';
 
-  // Every timing/spring/threshold constant below is sourced live from
-  // the config panel (see config.js) via CFG.get(id) at the point of
-  // use, rather than being a fixed const read once — so dragging a
-  // slider in the panel takes effect on the very next rotate/merge/
-  // drag, no reload needed.
-
   function loadSaved() {
     try {
       return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
@@ -56,17 +47,11 @@ function start(hotData = {}) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
     } catch (err) {
-      /* storage unavailable — game still works, just won't remember */
+      /* storage unavailable: works for this session only */
     }
   }
 
-  // Persists the live game (board/queue/score/moves/gameOver) so a
-  // reload resumes where the player left off, not just best score and
-  // board size. Called right after every state mutation, independent
-  // of whatever animation is still playing it out visually — the
-  // logical state is already final at that point (see S.placePiece).
-  // rng is never saved (not serializable, and a resumed game doesn't
-  // need to replay it) — it just gets a fresh Math.random().
+  // Saved after every change, so a reload resumes the game. rng isn't saved.
   function persistGameState() {
     persist({
       game: {
@@ -80,9 +65,7 @@ function start(hotData = {}) {
     });
   }
 
-  // A saved game only resumes if it matches the board size currently
-  // selected — a size change (or a first visit, or cleared storage)
-  // starts fresh instead of trying to replay a mismatched board.
+  // Only resumes a game saved at the currently selected board size.
   function restoredState(saved, config) {
     const g = saved.game;
     if (!g || !Array.isArray(g.board) || !Array.isArray(g.queue)) return null;
@@ -112,11 +95,8 @@ function start(hotData = {}) {
   function render() {
     R.renderBoard(boardEl, state.board, {});
     R.renderQueue(currentPieceEl, nextPieceEl, state);
-    // Only this general render path means "a piece genuinely entered
-    // the slot" (a new game, or the next piece moving up after a
-    // placement) — rotation redraws the same piece by calling
-    // R.renderQueue directly, without this class, so spinning a piece
-    // never also replays its entrance pop.
+    // Only a genuinely new current piece gets the entrance pop; rotation calls
+    // renderQueue directly and skips it.
     const enteringPieceEl = currentPieceEl.querySelector('.piece');
     if (enteringPieceEl) enteringPieceEl.classList.add('piece--entering');
     R.renderScore(scoreEl, state);
@@ -135,36 +115,14 @@ function start(hotData = {}) {
     }
   }
 
-  // True from the moment a merge cascade starts animating until its
-  // final step has visually resolved. Placement, rotation, New Game and
-  // a board-size change all read state synchronously and would produce
-  // a perfectly consistent result if run mid-timeline — but Anim's
-  // intermediate re-renders draw from each step's own board snapshot,
-  // not from whatever main.js might do to `state` meanwhile, so an
-  // action that lands in that window could get visually clobbered by
-  // the timeline's next scheduled frame. Cheaper to just block input
-  // for the (sub-second) duration of the playback than to make every
-  // intermediate render re-derive itself from live state.
-
   function newGame() {
-    // Resetting state out from under a playing timeline is exactly the
-    // race Anim.isPlaying() exists to prevent, so this quietly no-ops
-    // during one, the same way a pointerdown does.
+    // The timeline would redraw its old boards over the new game.
     if (Anim.isPlaying()) return;
     state = S.createState(config);
     persistGameState();
     render();
   }
 
-  // Places the current piece and animates the result. S.placePiece
-  // returns the whole timeline of what that caused — the piece
-  // landing, its own merge cascade, then whatever gravity does — as
-  // one ordered list of steps (see state.js). A step with nothing in
-  // it beyond the bare landing just appears, same as before (no
-  // landing animation); anything longer is handed to Anim to play
-  // step by step. `selected` is the absolute cell the player was
-  // holding — passed through so a forming merge converges there rather
-  // than on an arbitrary cell of the piece.
   function commitPlacement(target, selected) {
     const { steps } = S.placePiece(state, target.r, target.c, selected);
     persistGameState();
@@ -179,16 +137,12 @@ function start(hotData = {}) {
     Anim.playTimeline(boardEl, steps, render);
   }
 
-  let rotateSettling = false; // true while dice are still sliding into their new grid slots after a rotation
-  let rotateAnimatedDies = []; // dice mid-FLIP-transition, so a pickup can snap them to rest instead of waiting
+  let rotateSettling = false;
+  let rotateAnimatedDies = [];
   let rotateSettleTimeoutId = null;
 
-  // Snaps any in-progress rotate FLIP straight to its resting state.
-  // The state and DOM were already updated synchronously at the start
-  // of rotateCurrentPiece — only the visual transition is still
-  // playing — so cutting it short here just skips the tween, it never
-  // leaves state and DOM out of sync. Lets a pickup grab the piece the
-  // instant it's pressed instead of waiting on the spin to finish.
+  // Lets a press grab the piece mid-rotation: state is already final, this just
+  // skips the rest of the tween.
   function interruptRotateSettle() {
     if (!rotateSettling) return;
     clearTimeout(rotateSettleTimeoutId);
@@ -200,27 +154,17 @@ function start(hotData = {}) {
     rotateSettling = false;
   }
 
-  // Rotates the queued piece 90° clockwise. Individual dice never spin
-  // in place — only their positions move, each die sliding in a
-  // straight line from its old grid slot to its new one (a FLIP
-  // animation: capture each die's on-screen rect before the state
-  // change, apply the new arrangement instantly, then transition each
-  // die back from its old rect to its new one). Spinning the whole
-  // piece as one rigid transform looked wrong once dice carried
-  // asymmetric detail (pips, a beveled edge) — the pips and bevel
-  // would visibly rotate with the piece, then snap back the instant
-  // the freshly-rendered (upright) shape swapped in.
+  // Each die slides from its old slot to its new one (FLIP); the dice
+  // themselves never rotate, so their pips stay upright.
   function rotateCurrentPiece() {
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!pieceEl) return;
+    // Never make the player wait on an animation to pick the piece up.
     interruptRotateSettle();
 
     const oldPiece = state.queue[0];
 
-    // A single die has no position to move to — rotatePiece is a
-    // geometric no-op for one cell, so the usual position-FLIP below
-    // would animate nothing. Spin the die in place instead, fast, so a
-    // tap on a lone die still reads as having registered.
+    // A lone die has nowhere to move, so it spins instead.
     if (oldPiece.cells.length === 1) {
       S.rotateQueueHead(state);
       persistGameState();
@@ -239,8 +183,6 @@ function start(hotData = {}) {
     const mass = D.pieceMass(oldPiece);
     const rotateMs = Math.min(CFG.get('rotateMaxMs'), D.scaleWithMass(CFG.get('rotateBaseMs'), mass));
 
-    // rotatePiece maps cells 1:1 by array index, so pairing old cell i
-    // with rotated cell i identifies which specific die moved where.
     const oldRects = oldPiece.cells.map(
       ({ dr, dc }) => pieceEl.querySelector(`.die[data-dr="${dr}"][data-dc="${dc}"]`)?.getBoundingClientRect()
     );
@@ -262,9 +204,6 @@ function start(hotData = {}) {
       animatedDies.push(dieEl);
     });
 
-    // Force layout so the "start" transform above actually applies
-    // before it's switched back to 0 below — otherwise the browser
-    // would collapse the two writes and there'd be nothing to animate.
     void newPieceEl.offsetWidth;
 
     animatedDies.forEach((dieEl) => {
@@ -283,16 +222,11 @@ function start(hotData = {}) {
     }, rotateMs + 40);
   }
 
-  // --- Drag / tap controller -------------------------------------------
-
-  let drag = null; // { pointerId, pieceEl, grabDr, grabDc, startX, startY, dragging, target, ...physics }
-  let dragLocked = false; // true while a released piece is still springing back into its slot
-  let springBackCancelFns = []; // cancels the in-progress springBack, so a pickup can interrupt it
+  let drag = null;
+  let dragLocked = false;
+  let springBackCancelFns = [];
   let springBackPieceEl = null;
 
-  // Stops an in-progress springBack immediately and leaves the piece
-  // usable — lets a pickup grab a piece that's still snapping back
-  // from a rejected drop instead of waiting for it to settle.
   function interruptSpringBack() {
     if (!dragLocked) return;
     springBackCancelFns.forEach((cancel) => cancel && cancel());
@@ -305,12 +239,7 @@ function start(hotData = {}) {
     dragLocked = false;
   }
 
-  // Springs a rejected/cancelled piece from wherever it was released
-  // back to (0, 0) in its slot. Starts from rest — the piece was
-  // tracking the pointer 1:1 while held (no animation, no velocity of
-  // its own; see onPointerMove) — so this is the only motion the piece
-  // has. Mass flows through here too (F=ma in P.stepSpring), so a
-  // heavier piece overshoots and settles more slowly on the way back.
+  // Returns a rejected piece to its slot on two springs (x and y).
   function springBack(pieceEl, startX, startY, mass) {
     dragLocked = true;
     springBackPieceEl = pieceEl;
@@ -357,13 +286,9 @@ function start(hotData = {}) {
     springBackCancelFns = [cancelX, cancelY];
   }
 
-  // Shakes the board cells a rejected placement would have occupied —
-  // the piece bounced off something solid there, harder if it was
-  // carrying more mass. Reuses the (previously unused) .cell--shake
-  // keyframe, restarting it via a reflow in the rare case the same
-  // cell gets shaken again before it finishes.
+  // Heavier rejected pieces shake the cells harder.
   function shakeRejectedCells(cells, mass) {
-    const strength = D.scaleWithMass(1, mass); // sqrt(mass), read by the keyframe
+    const strength = D.scaleWithMass(1, mass);
     cells.forEach(({ r, c }) => {
       const el = R.cellAt(boardEl, r, c);
       if (!el) return;
@@ -386,9 +311,7 @@ function start(hotData = {}) {
     return el ? el.closest('.cell') : null;
   }
 
-  // The anchor is derived from whichever piece cell was grabbed, not
-  // always the piece's (0,0) offset — dropping the cell you're holding
-  // onto a board square places the whole piece relative to that square.
+  // The piece's (0,0) position when the grabbed die is over (hoverR, hoverC).
   function anchorForHover(hoverR, hoverC) {
     return { r: hoverR - drag.grabDr, c: hoverC - drag.grabDc };
   }
@@ -416,22 +339,13 @@ function start(hotData = {}) {
 
   function onPointerDown(e) {
     if (state.gameOver || drag || Anim.isPlaying()) return;
-    // Picking up the piece is never blocked by an animation still
-    // playing on it — a mid-flight rotate or a not-yet-settled
-    // snapback is interrupted (not waited out) so the piece is always
-    // grabbable the instant it's pressed.
     interruptRotateSettle();
     interruptSpringBack();
     const slot = e.target.closest('[data-dr]');
     const pieceEl = currentPieceEl.querySelector('.piece');
     if (!slot || !pieceEl) return;
 
-    // Lifted clear of the thumb while dragging (see onPointerMove) so
-    // the piece — and the board cells it'd land on — stay visible
-    // instead of sitting directly under the finger that's holding it.
-    // Sized off the grabbed cell's own on-screen size rather than a
-    // fixed px value, so it scales with however big dice are actually
-    // rendering right now (see --queue-die in styles.css).
+    // The dragged piece floats above the finger, sized off the grabbed die.
     const liftPx = slot.getBoundingClientRect().height * CFG.get('dragLiftScale');
 
     drag = {
@@ -454,9 +368,6 @@ function start(hotData = {}) {
     pieceEl.addEventListener('pointercancel', onPointerCancel);
   }
 
-  // While held, the piece tracks the pointer exactly (translate by the
-  // same delta the pointer has moved from the press point) — no lag,
-  // no lean, no animation of its own.
   function onPointerMove(e) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const dx = e.clientX - drag.startX;
@@ -467,21 +378,14 @@ function start(hotData = {}) {
     if (!drag.dragging) {
       if (Math.hypot(dx, dy) < CFG.get('dragThresholdPx')) return;
       drag.dragging = true;
-      // 'piece--tracking' is what actually turns off pointer-events (so
-      // elementFromPoint below can see the board cell under the piece,
-      // not the piece itself). It's scoped tightly to live dragging and
-      // dropped the instant the pointer is released — unlike
-      // 'piece--dragging', which stays through the springback so the
-      // piece keeps its elevated/shadowed look while it animates home.
+      // --tracking disables pointer events on the piece so elementFromPoint finds
+      // the cell under it; it's dropped on release, while --dragging stays for the
+      // springback.
       drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
     }
 
-    // Hit-testing targets the same lifted point the piece is actually
-    // drawn at (raw pointer position minus the lift), not the raw
-    // pointer/thumb position — so the preview highlight always lines up
-    // with where the piece visually sits, and dropping lands it exactly
-    // there instead of one die-height below where it looks like it is.
     drag.pieceEl.style.transform = `translate(${dx}px, ${dy - drag.liftPx}px)`;
+    // Hit-test at the lifted position, where the piece is drawn.
     updateDragPreview(e.clientX, e.clientY - drag.liftPx);
   }
 
@@ -491,15 +395,11 @@ function start(hotData = {}) {
     pieceEl.removeEventListener('pointermove', onPointerMove);
     pieceEl.removeEventListener('pointerup', onPointerUp);
     pieceEl.removeEventListener('pointercancel', onPointerCancel);
-    // Pointer tracking is over the instant the pointer lifts, whether or
-    // not a springback follows — drop the pointer-events block right
-    // here so the piece is grabbable/tappable again immediately, instead
-    // of staying inert for the whole springback animation.
+
     pieceEl.classList.remove('piece--tracking');
     clearPreview();
 
     if (!dragging) {
-      // A tap: rotate the piece in place instead of placing it.
       if (commit) rotateCurrentPiece();
       drag = null;
       return;
@@ -512,12 +412,6 @@ function start(hotData = {}) {
       return;
     }
 
-    // Invalid drop (or cancelled): the piece springs back to its slot
-    // from wherever it was released, and any cells it was hovering
-    // over shake, as if it bounced off them. Starts from the piece's
-    // actual rendered position (pointer delta minus the drag lift), so
-    // it settles home in one continuous motion instead of first
-    // popping down to the un-lifted position and springing from there.
     if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c), drag.mass);
     springBack(pieceEl, drag.targetX, drag.targetY - drag.liftPx, drag.mass);
     drag = null;
@@ -534,8 +428,6 @@ function start(hotData = {}) {
   }
 
   currentPieceEl.addEventListener('pointerdown', onPointerDown);
-
-  // --- Toolbar / settings / game-over ------------------------------------
 
   newGameBtn.addEventListener('click', () => {
     settingsDialog.close();
@@ -563,7 +455,6 @@ function start(hotData = {}) {
     newGame();
   });
 
-  // Gravity is read at each placement, so changing it needs no new game.
   const gravityDirectionSelect = document.getElementById('gravity-direction-select');
   CFG.item('gravityDirection').options.forEach((opt) => {
     gravityDirectionSelect.append(new Option(opt.label, opt.value));
@@ -577,7 +468,7 @@ function start(hotData = {}) {
 
   render();
 
-  // Artifact viewer hot reload: carry the live game across a republish.
+  // Artifact viewer: carry the live game across a republish.
   if (window.claude?.hot?.snapshot) {
     window.claude.hot.snapshot(() => ({
       config: state.config,
