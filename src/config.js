@@ -30,8 +30,8 @@ const DiceMergeConfig = (() => {
 
     { id: 'pulseRingPx', group: 'Merge Impact', label: 'Merge-target pulse ring size', unit: 'px', initial: 10, min: 0, max: 250, step: 2, apply: { type: 'css', varName: '--cfg-pulse-ring', unit: 'px' } },
     { id: 'pulseDurationMs', group: 'Merge Impact', label: 'Merge-target pulse duration', unit: 'ms', initial: 220, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-pulse-duration', unit: 'ms' } },
-    { id: 'pulseBurstDurationMs', group: 'Merge Impact', label: 'Extra ring duration (merges over 3 dice)', unit: 'ms', initial: 140, min: 0, max: 2000, step: 5, apply: { type: 'css', varName: '--cfg-pulse-burst-duration', unit: 'ms' } },
-    { id: 'pulseBurstIntervalMs', group: 'Merge Impact', label: 'Extra ring stagger (time between ripples)', unit: 'ms', initial: 50, min: 0, max: 1000, step: 5, apply: { type: 'main' } },
+    { id: 'pulseBurstDurationMs', group: 'Merge Impact', label: 'Extra pulse ring duration (merges over 3 dice)', unit: 'ms', initial: 220, min: 0, max: 2000, step: 5, apply: { type: 'main' } },
+    { id: 'pulseBurstIntervalMs', group: 'Merge Impact', label: 'Time between extra pulses', unit: 'ms', initial: 80, min: 0, max: 1000, step: 5, apply: { type: 'main' } },
     { id: 'popBaseScale', group: 'Merge Impact', label: 'Merge-pop base scale', unit: '×', initial: 1.15, min: 0.1, max: 8, step: 0.05, apply: { type: 'css', varName: '--cfg-merge-pop-base', unit: '' } },
     { id: 'popPerImpactScale', group: 'Merge Impact', label: 'Merge-pop scale per unit impact', unit: '×', initial: 0.09, min: 0, max: 3, step: 0.01, apply: { type: 'css', varName: '--cfg-merge-pop-per-impact', unit: '' } },
     { id: 'popScaleCap', group: 'Merge Impact', label: 'Merge-pop scale cap', unit: '×', initial: 1.6, min: 1, max: 15, step: 0.1, apply: { type: 'css', varName: '--cfg-merge-pop-cap', unit: '' } },

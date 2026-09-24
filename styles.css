@@ -170,20 +170,14 @@ body {
   animation: die-merge-target-pulse var(--cfg-pulse-duration) ease-out;
 }
 
-@keyframes die-merge-target-ring-pulse {
-  from { transform: scale(1); opacity: 1; }
-  to { transform: scale(1.7); opacity: 0; }
-}
-
+/* Animated from animate.js; invisible otherwise. */
 .merge-target-ring {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  box-shadow: 0 0 0 2px var(--accent);
-
+  box-shadow: 0 0 0 3px var(--accent), 0 0 12px 2px var(--accent-soft);
   opacity: 0;
-  animation: die-merge-target-ring-pulse var(--cfg-pulse-burst-duration) ease-out;
 }
 
 @keyframes die-merge-pop {
