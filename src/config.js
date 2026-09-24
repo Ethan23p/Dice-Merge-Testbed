@@ -92,7 +92,7 @@ const DiceMergeConfig = (() => {
     // 3-cell pieces specifically (see generatePiece in data.js) — the
     // combo this enables is forced-pair triples alongside still-unique
     // 1- and 2-cell pieces, both on at once.
-    { id: 'forcePairInTriple', group: 'Balance & Spawn', label: '3-cell pieces: force one repeated pair', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'forcePairInTriple' } },
+    { id: 'forcePairInTriple', group: 'Balance & Spawn', label: '3-cell pieces: force one repeated pair', unit: '', type: 'bool', initial: true, apply: { type: 'data', key: 'forcePairInTriple' } },
 
     // --- Gravity ---
     { id: 'gravityEnabled', group: 'Gravity', label: 'Gravity', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'gravityEnabled' } },

@@ -59,7 +59,7 @@ const DiceMergeData = (() => {
     spawnTemperature: 2, // higher = flatter spawn-rarity curve
     spawnValuePool: 8, // highest value ever rolled for as a spawn
     noRepeatInCluster: false, // a multi-cell piece's own dice can't share a value
-    forcePairInTriple: false, // a 3-cell piece always has exactly one repeated pair
+    forcePairInTriple: true, // a 3-cell piece always has exactly one repeated pair
     gravityEnabled: false, // board settles toward gravityDirection after every placement
     gravityDirection: 'down', // 'up' | 'down' | 'left' | 'right'
   };

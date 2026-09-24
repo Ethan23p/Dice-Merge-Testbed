@@ -59,6 +59,20 @@
       <select id="board-size-select"></select>
     </label>
     <p class="settings-hint">Changing board size starts a new game.</p>
+    <!-- Gravity rows are the same config items as the tuning panel's
+         Gravity group (config.js), filled in by main.js and kept in sync
+         with the panel's copies. -->
+    <div class="settings-row">
+      <span>Gravity</span>
+      <label class="bool-toggle">
+        <input type="checkbox" id="gravity-toggle" aria-label="Gravity" />
+        <span class="bool-toggle-track"></span>
+      </label>
+    </div>
+    <label class="settings-row">
+      <span>Gravity direction</span>
+      <select id="gravity-direction-select"></select>
+    </label>
     <button class="dialog-close" id="new-game-btn" type="button">New Game</button>
     <button class="dialog-close dialog-close--ghost" id="close-settings-btn" type="button">Close</button>
   </dialog>

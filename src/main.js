@@ -611,7 +611,7 @@
         if (item.type === 'bool') input.checked = Boolean(value);
         else input.value = String(value);
       }
-      valueEl.textContent = formatValue(item, value);
+      if (valueEl) valueEl.textContent = formatValue(item, value);
     });
   }
 
@@ -818,6 +818,47 @@
       download();
     }
   });
+
+  // --- Settings: gravity ---------------------------------------------
+  //
+  // The Settings dialog's gravity controls are a third home for the
+  // same two config items as the panel's Gravity group, so they register
+  // in rowRegistry (scope 'settings', no value label) like any other
+  // copy: a change here updates the panel and HUD rows, and a reset
+  // there updates these. Gravity is read fresh at each placement, so no
+  // new game is needed.
+
+  const gravityToggle = document.getElementById('gravity-toggle');
+  const gravityDirectionSelect = document.getElementById('gravity-direction-select');
+  const gravityDirectionItem = CFG.SCHEMA.find((i) => i.id === 'gravityDirection');
+
+  gravityDirectionItem.options.forEach((opt) => {
+    const option = document.createElement('option');
+    option.value = opt.value;
+    option.textContent = opt.label;
+    gravityDirectionSelect.appendChild(option);
+  });
+
+  function syncGravitySettings() {
+    gravityToggle.checked = Boolean(CFG.get('gravityEnabled'));
+    gravityDirectionSelect.value = String(CFG.get('gravityDirection'));
+    gravityDirectionSelect.disabled = !gravityToggle.checked;
+  }
+
+  registryFor('gravityEnabled').valueEls.add({ input: gravityToggle, valueEl: null, scope: 'settings' });
+  registryFor('gravityDirection').valueEls.add({ input: gravityDirectionSelect, valueEl: null, scope: 'settings' });
+
+  gravityToggle.addEventListener('change', () => {
+    CFG.set('gravityEnabled', gravityToggle.checked);
+    syncValueDisplays('gravityEnabled');
+    syncGravitySettings();
+  });
+  gravityDirectionSelect.addEventListener('change', () => {
+    CFG.set('gravityDirection', gravityDirectionSelect.value);
+    syncValueDisplays('gravityDirection');
+  });
+  settingsBtn.addEventListener('click', syncGravitySettings);
+  syncGravitySettings();
 
   renderConfigBody();
   renderPinnedHud();
