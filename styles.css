@@ -466,6 +466,14 @@ body {
   padding: 6px 10px;
 }
 
+.settings-row .bool-toggle {
+  flex: 0 0 46px;
+}
+
+.settings-row select:disabled {
+  opacity: 0.45;
+}
+
 .settings-hint {
   color: var(--text-dim);
   font-size: 13px;
