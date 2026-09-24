@@ -4,8 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function load(files = ['data.js', 'state.js']) {
-  const context = vm.createContext({});
+// config.js is included because it supplies every default value; its
+// browser dependencies are stubbed.
+function load(files = ['data.js', 'config.js', 'state.js']) {
+  const context = vm.createContext({
+    localStorage: { getItem: () => null, setItem: () => {} },
+    document: { documentElement: { style: { setProperty: () => {} } } },
+  });
   for (const file of files) {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', file), 'utf8');
     vm.runInContext(src, context, { filename: file });

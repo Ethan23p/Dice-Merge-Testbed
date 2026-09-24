@@ -41,24 +41,8 @@ const DiceMergeData = (() => {
     return PIP_LAYOUTS[value] || null;
   }
 
-  // Balance knobs that the config panel (see config.js) can retune
-  // live. Read through `params.X` at call time everywhere below,
-  // rather than closed-over constants, so a panel change takes effect
-  // on the very next roll/merge — no reload needed. This object's
-  // starting values ARE the "initial" values recorded in config.js's
-  // schema; keep the two in sync if either changes.
-  const params = {
-    massBase: 2, // mass(value) = massBase ** (value - 1)
-    massExponent: 0.5, // scaleWithMass(base, mass) = base * mass ** massExponent
-    scoreMultiplier: 10, // score = massReleased * scoreMultiplier
-    mergeMinCluster: 3, // dice needed, same-value and touching, to merge
-    spawnTemperature: 2, // higher = flatter spawn-rarity curve
-    spawnValuePool: 8, // highest value ever rolled for as a spawn
-    noRepeatInCluster: false, // a multi-cell piece's own dice can't share a value
-    forcePairInTriple: true, // a 3-cell piece always has exactly one repeated pair
-    gravityEnabled: false, // board settles toward gravityDirection after every placement
-    gravityDirection: 'down', // 'up' | 'down' | 'left' | 'right'
-  };
+  // Balance knobs, filled in from config.js's SCHEMA at load.
+  const params = {};
 
   // Every die value stands for a "mass" that grows per tier — used for
   // scoring and animation weight (a heavier die drops/impacts harder),
@@ -167,11 +151,8 @@ const DiceMergeData = (() => {
     ],
   };
 
-  const PIECE_SIZE_WEIGHTS = [
-    { size: 1, weight: 40 },
-    { size: 2, weight: 35 },
-    { size: 3, weight: 25 },
-  ];
+  // Weights are filled in from config.js's SCHEMA at load.
+  const PIECE_SIZE_WEIGHTS = [1, 2, 3].map((size) => ({ size, weight: 0 }));
 
   function rollPieceSize(rng = Math.random) {
     const total = PIECE_SIZE_WEIGHTS.reduce((sum, e) => sum + e.weight, 0);

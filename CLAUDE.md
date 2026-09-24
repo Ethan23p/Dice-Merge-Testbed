@@ -39,10 +39,10 @@ persisted per-player `default` and `current`. Types: numeric slider (default),
 `D.params`, a `PIECE_SIZE_WEIGHTS` entry, a `--cfg-*` CSS variable, or
 nothing (`'main'`, read via `CFG.get` at use time).
 
-- To change a shipped default, change `initial` in the schema (and the
-  matching `D.params` literal in `data.js` so the two don't disagree).
-  Players who already have a stored `current`/`default` for that id keep it
-  until they reset.
+- The schema is the only place defaults live: `D.params`, piece weights, and
+  every `--cfg-*` CSS variable are filled from it at load (no CSS fallbacks;
+  `test/config.test.js` checks every variable is supplied). Players with a
+  stored value for an id keep it until they reset.
 - The same config item can have several UI copies (Tuning panel, pinned HUD,
   Settings dialog). All register in `main.js`'s `rowRegistry` by id so a
   change in one updates the others — new copies must register too.
