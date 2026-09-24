@@ -26,19 +26,15 @@ const DiceMergeData = (() => {
   // Values beyond the palette length fall back to a generated hue so
   // merge chains never run out of colors.
   const BASE_PALETTE = [
-    '#c9c9c9', // 1
-    '#4f8ef7', // 2
-    '#57c15d', // 3
-    '#f5a623', // 4
-    '#e8534f', // 5
-    '#9b6bd6', // 6
+    'var(--die-1)', 'var(--die-2)', 'var(--die-3)',
+    'var(--die-4)', 'var(--die-5)', 'var(--die-6)',
   ];
 
   function colorForValue(value) {
     const idx = value - 1;
     if (idx >= 0 && idx < BASE_PALETTE.length) return BASE_PALETTE[idx];
     const hue = (idx * 47) % 360;
-    return `hsl(${hue}, 62%, 55%)`;
+    return `hsl(${hue}, 55%, 52%)`;
   }
 
   function pipLayoutForValue(value) {

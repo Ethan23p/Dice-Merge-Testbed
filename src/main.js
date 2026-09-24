@@ -12,7 +12,7 @@
  * never moves past the drag threshold is treated as a tap, which
  * rotates the piece in place instead.
  */
-(() => {
+function start(hotData = {}) {
   const D = DiceMergeData;
   const S = DiceMergeState;
   const R = DiceMergeRender;
@@ -39,7 +39,7 @@
   const pinnedHudEl = document.getElementById('pinned-config');
   const exportBtn = document.getElementById('config-export-btn');
 
-  const STORAGE_KEY = 'dice-merge-testbed:v2';
+  const STORAGE_KEY = 'dice-merge:v3';
 
   // Every timing/spring/threshold constant below is sourced live from
   // the config panel (see config.js) via CFG.get(id) at the point of
@@ -103,12 +103,15 @@
   }
 
   let saved = loadSaved();
-  let config = {
+  let config = hotData.config || {
     ...D.DEFAULT_CONFIG,
     boardSize: saved.boardSize || D.DEFAULT_CONFIG.boardSize,
   };
-  let bestScore = saved.bestScore || 0;
-  let state = restoredState(saved, config) || S.createState(config);
+  let bestScore = hotData.bestScore ?? (saved.bestScore || 0);
+  let state = hotData.board
+    ? { config, board: hotData.board, queue: hotData.queue, score: hotData.score,
+        moves: hotData.moves, gameOver: hotData.gameOver, rng: Math.random }
+    : restoredState(saved, config) || S.createState(config);
 
   function render() {
     R.renderBoard(boardEl, state.board, {});
@@ -801,7 +804,17 @@
   // every export needs to also drop a file when the copy worked fine.
   exportBtn.addEventListener('click', () => {
     const text = CFG.exportText();
-    const download = () => {
+    const download = async () => {
+      // The artifact viewer's sandbox blocks anchor downloads.
+      if (window.claude?.use) {
+        try {
+          const downloads = await window.claude.use('downloads');
+          if (downloads) await downloads.save({ filename: 'dice-merge-config.txt', data: text });
+        } catch (err) {
+          /* declined or unavailable */
+        }
+        return;
+      }
       const blob = new Blob([text], { type: 'text/plain' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -864,4 +877,23 @@
   renderPinnedHud();
 
   render();
-})();
+
+  // Artifact viewer hot reload: carry the live game across a republish.
+  if (window.claude?.hot?.snapshot) {
+    window.claude.hot.snapshot(() => ({
+      config: state.config,
+      board: state.board,
+      queue: state.queue,
+      score: state.score,
+      moves: state.moves,
+      gameOver: state.gameOver,
+      bestScore,
+    }));
+  }
+}
+
+if (window.claude?.hot?.ready) {
+  window.claude.hot.ready(start);
+} else {
+  start(window.claude?.hot?.data ?? {});
+}

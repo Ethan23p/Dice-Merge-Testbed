@@ -20,7 +20,7 @@
  *     already live on the next read.
  */
 const DiceMergeConfig = (() => {
-  const STORAGE_KEY = 'dice-merge-testbed:config:v1';
+  const STORAGE_KEY = 'dice-merge:config:v1';
 
   // Ranges below are intentionally pushed well past anything a normal
   // playtest would reach — "just before broken," not "sensible." Zero

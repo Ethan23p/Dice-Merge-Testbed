@@ -2,8 +2,9 @@
 
 A mobile-first dice-merging puzzle game: drag polyomino pieces of dice onto a
 grid; 3+ orthogonally touching same-value dice merge into one die of value+1.
-Plain HTML/CSS/JS — no build step, no dependencies, no test suite. Open
-`index.html` directly in a browser to run it.
+Plain HTML/CSS/JS with no dependencies. Open `index.html` directly in a
+browser to run it; `npm test` runs the logic tests (`node:test`), and
+`npm run build` produces the single-file artifact.
 
 ## Layout
 
@@ -18,7 +19,7 @@ global (`DiceMerge*`), and later modules read earlier ones.
 | `src/render.js` | `DiceMergeRender` | State → DOM. No game rules |
 | `src/physics.js` | `DiceMergePhysics` | Damped spring (rAF), used by drag snapback |
 | `src/animate.js` | `DiceMergeAnimate` | Plays a `steps` timeline on the board |
-| `src/main.js` | — | Wiring: DOM events, drag/tap controller, persistence, Settings dialog, Tuning panel UI |
+| `src/main.js` | `start()` | Wiring: DOM events, drag/tap controller, persistence, Settings dialog, Tuning panel UI |
 
 ## Conventions
 
@@ -53,17 +54,11 @@ nothing (`'main'`, read via `CFG.get` at use time).
 The game is also published as a single-file Claude artifact, "Dice Merge":
 https://claude.ai/artifact/RLGAVNurn5e1xk1hGLK2ft
 
-It is a **hand-maintained port**, not a build output. When a change should
-reach it, read the live artifact, apply the equivalent edit, and republish to
-that URL. Known differences from the repo:
-
-- All modules inlined in one `<script>`; `main.js`'s body lives in
-  `start(hotData)` with `window.claude.hot` snapshot/restore.
-- Own dark "felt" theme and Fredoka/Manrope fonts; some class names differ
-  (`.queue` vs `.queue-panel`, `.btn-primary` vs `.dialog-close`).
-- Different storage keys (`dice-merge:v3`, `dice-merge:config:v1`).
-- Config export falls back to the artifact `downloads` capability instead of
-  a Blob link.
+The repo is the only source. `npm run build` inlines `styles.css` and
+`src/*.js` into `dist/dice-merge.html` (gitignored); publish that file to the
+URL above (it declares the `downloads` capability, used by config export).
+`main.js` already handles the artifact runtime (`window.claude.hot` state
+carry-over, `downloads`) and falls back cleanly in a plain browser.
 
 ## Git
 
