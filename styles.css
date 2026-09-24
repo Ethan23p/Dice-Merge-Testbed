@@ -163,6 +163,38 @@ body {
   animation: die-merge-target-pulse var(--cfg-pulse-duration, 220ms) ease-out;
 }
 
+/* A merge past the 3-die baseline (see D.params.mergeMinCluster in
+   animate.js's highlightTargets) sends out one extra ring per die
+   beyond that — a real emanation, not a second animation squeezed onto
+   the die's own box-shadow: die-merge-target-pulse is a round trip
+   (compact -> expand+fade -> compact again), so re-triggering it
+   rapidly on one property looks like flickering, not distinct pulses.
+   Each extra ring is its own element instead, playing a one-way
+   grow-and-fade once (die-merge-target-ring-pulse below), with its
+   start time staggered by highlightTargets — overlapping rings are
+   what actually reads as "more than one ripple" on screen. */
+@keyframes die-merge-target-ring-pulse {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(1.7); opacity: 0; }
+}
+
+.merge-target-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: 0 0 0 2px var(--accent);
+  /* Resting opacity is 0, not the box-shadow itself — an animation
+     with the default fill-mode only overrides a property while it's
+     actively running; outside that window (waiting for its delay, or
+     finished) the property reverts to this base rule. Since only
+     opacity/transform are animated, resting at opacity 0 is what keeps
+     a not-yet-started or already-finished ring invisible instead of
+     snapping to a fully solid, unscaled ring. */
+  opacity: 0;
+  animation: die-merge-target-ring-pulse var(--cfg-pulse-burst-duration, 140ms) ease-out;
+}
+
 /* Impact scales with the mass the merge actually released (see
    D.resolveClusterMass): render.js sets --merge-impact to that amount,
    so a minimal 3-of-a-kind (releases 1) gives a light bump while a

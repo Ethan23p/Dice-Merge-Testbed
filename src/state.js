@@ -22,7 +22,7 @@
  *   step = {
  *     board: number[][],                      // the board once this step lands
  *     moves: { value, path: {r,c}[] }[],       // dice in flight this step, along their real route
- *     pops: { r, c, massReleased }[],          // cells to flash as newly merged, once step.board is shown
+ *     pops: { r, c, massReleased, size }[],     // cells to flash as newly merged, once step.board is shown (size = dice consumed)
  *   }
  * A step is never returned or stored on `state` itself — it describes
  * a transition, not a resting state, so it has nowhere to live once
@@ -243,7 +243,7 @@ const DiceMergeState = (() => {
       state.board[survivor.r][survivor.c] = newValue;
       if (touchesPiece) nextHeldPieceCells.add(`${survivor.r},${survivor.c}`);
       scoreGained += score;
-      pops.push({ r: survivor.r, c: survivor.c, massReleased });
+      pops.push({ r: survivor.r, c: survivor.c, massReleased, size: cluster.length });
     });
     return { scoreGained, moves, pops, heldPieceCells: nextHeldPieceCells };
   }
