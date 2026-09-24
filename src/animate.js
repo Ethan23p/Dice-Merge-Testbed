@@ -27,7 +27,7 @@ const DiceMergeAnimate = (() => {
   }
 
   function cellCenter(boardEl, r, c) {
-    const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+    const el = R.cellAt(boardEl, r, c);
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
@@ -120,7 +120,7 @@ const DiceMergeAnimate = (() => {
   // the next renderBoard.
   function highlightTargets(boardEl, pops) {
     pops.forEach((pop) => {
-      const die = boardEl.querySelector(`.cell[data-r="${pop.r}"][data-c="${pop.c}"] .die`);
+      const die = R.cellAt(boardEl, pop.r, pop.c)?.querySelector('.die');
       if (!die) return;
       die.classList.add('die--merge-target');
       const extra = extraPulseCount(pop);
@@ -140,7 +140,7 @@ const DiceMergeAnimate = (() => {
   function animateMoves(boardEl, moves, hopMs) {
     moves.forEach((m, i) => {
       const start = m.path[0];
-      const dieEl = boardEl.querySelector(`.cell[data-r="${start.r}"][data-c="${start.c}"] .die`);
+      const dieEl = R.cellAt(boardEl, start.r, start.c)?.querySelector('.die');
       if (dieEl) flyDieAlongPath(boardEl, dieEl, m.path, hopMs, 5 + (m.path.length - 1) * moves.length + i);
     });
   }
@@ -189,12 +189,10 @@ const DiceMergeAnimate = (() => {
       animateMoves(boardEl, step.moves, hopMs);
 
       window.setTimeout(() => {
-        window.setTimeout(() => {
-          R.renderBoard(boardEl, step.board, { pops: step.pops });
-          i += 1;
-          playStep();
-        }, CFG.get('settleBeatMs'));
-      }, flightMs);
+        R.renderBoard(boardEl, step.board, { pops: step.pops });
+        i += 1;
+        playStep();
+      }, flightMs + CFG.get('settleBeatMs'));
     }
 
     playStep();

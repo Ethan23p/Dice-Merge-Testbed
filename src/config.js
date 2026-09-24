@@ -140,6 +140,10 @@ const DiceMergeConfig = (() => {
     return Math.min(item.max, Math.max(item.min, value));
   }
 
+  function item(id) {
+    return byId.get(id);
+  }
+
   function initialOf(id) {
     return byId.get(id).initial;
   }
@@ -274,6 +278,7 @@ const DiceMergeConfig = (() => {
 
   return {
     SCHEMA,
+    item,
     get,
     set,
     setAsDefault,

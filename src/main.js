@@ -19,6 +19,7 @@ function start(hotData = {}) {
   const P = DiceMergePhysics;
   const Anim = DiceMergeAnimate;
   const CFG = DiceMergeConfig;
+  const Panel = DiceMergePanel;
 
   const boardEl = document.getElementById('board');
   const currentPieceEl = document.getElementById('current-piece');
@@ -33,11 +34,6 @@ function start(hotData = {}) {
   const gameOverEl = document.getElementById('game-over');
   const gameOverScoreEl = document.getElementById('game-over-score');
   const playAgainBtn = document.getElementById('play-again-btn');
-  const configToggleBtn = document.getElementById('config-toggle-btn');
-  const configPanelEl = document.getElementById('config-panel');
-  const configBodyEl = document.getElementById('config-body');
-  const pinnedHudEl = document.getElementById('pinned-config');
-  const exportBtn = document.getElementById('config-export-btn');
 
   const STORAGE_KEY = 'dice-merge:v3';
 
@@ -369,7 +365,7 @@ function start(hotData = {}) {
   function shakeRejectedCells(cells, mass) {
     const strength = D.scaleWithMass(1, mass); // sqrt(mass), read by the keyframe
     cells.forEach(({ r, c }) => {
-      const el = boardEl.querySelector(`.cell[data-r="${r}"][data-c="${c}"]`);
+      const el = R.cellAt(boardEl, r, c);
       if (!el) return;
       el.style.setProperty('--reject-strength', String(strength));
       el.classList.remove('cell--shake');
@@ -413,7 +409,7 @@ function start(hotData = {}) {
     const valid = S.canPlaceAt(state, piece, r, c);
     S.shapeCellsAt(piece, r, c).forEach(({ r: rr, c: cc }) => {
       if (!S.inBounds(state, rr, cc)) return;
-      const el = boardEl.querySelector(`.cell[data-r="${rr}"][data-c="${cc}"]`);
+      const el = R.cellAt(boardEl, rr, cc);
       if (el) el.classList.add(valid ? 'preview-valid' : 'preview-invalid');
     });
   }
@@ -567,314 +563,17 @@ function start(hotData = {}) {
     newGame();
   });
 
-  // --- Tuning panel --------------------------------------------------
-  //
-  // Every row is built from CFG.SCHEMA and reads/writes through CFG
-  // (config.js) — main.js never touches localStorage or CFG's internal
-  // store directly. A row can exist in two places at once: the full
-  // panel's body (built once, stays in the DOM the whole session) and
-  // the pinned HUD (rebuilt whenever the pinned set changes). Editing
-  // either copy has to update the other, so every DOM node a row
-  // creates is registered here by config id and kept in sync.
-
-  const rowRegistry = new Map(); // id -> { valueEls: Set<{input, valueEl, scope}>, pinEls: Set<{input, scope}> }
-
-  function registryFor(id) {
-    if (!rowRegistry.has(id)) rowRegistry.set(id, { valueEls: new Set(), pinEls: new Set() });
-    return rowRegistry.get(id);
-  }
-
-  function clearScope(scope) {
-    rowRegistry.forEach((entry) => {
-      entry.valueEls.forEach((rec) => {
-        if (rec.scope === scope) entry.valueEls.delete(rec);
-      });
-      entry.pinEls.forEach((rec) => {
-        if (rec.scope === scope) entry.pinEls.delete(rec);
-      });
-    });
-  }
-
-  function decimalsFor(step) {
-    const s = String(step);
-    return s.includes('.') ? s.split('.')[1].length : 0;
-  }
-
-  function formatValue(item, value) {
-    if (item.type === 'bool') return value ? 'On' : 'Off';
-    if (item.type === 'select') return item.options.find((o) => o.value === value)?.label ?? String(value);
-    return `${value.toFixed(decimalsFor(item.step))}${item.unit}`;
-  }
-
-  function syncValueDisplays(id) {
-    const item = CFG.SCHEMA.find((i) => i.id === id);
-    const value = CFG.get(id);
-    registryFor(id).valueEls.forEach(({ input, valueEl }) => {
-      if (document.activeElement !== input) {
-        if (item.type === 'bool') input.checked = Boolean(value);
-        else input.value = String(value);
-      }
-      if (valueEl) valueEl.textContent = formatValue(item, value);
-    });
-  }
-
-  function syncPinDisplays(id) {
-    const pinned = CFG.isPinned(id);
-    registryFor(id).pinEls.forEach(({ input }) => {
-      input.checked = pinned;
-    });
-  }
-
-  function refreshAllDisplays() {
-    CFG.SCHEMA.forEach((item) => syncValueDisplays(item.id));
-  }
-
-  function buildPinToggle(item, scope) {
-    const label = document.createElement('label');
-    label.className = 'pin-toggle';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = CFG.isPinned(item.id);
-    input.setAttribute('aria-label', `Pin "${item.label}" to the game view`);
-    const track = document.createElement('span');
-    track.className = 'pin-toggle-track';
-    input.addEventListener('change', () => {
-      CFG.setPinned(item.id, input.checked);
-      syncPinDisplays(item.id);
-      renderPinnedHud();
-    });
-    label.appendChild(input);
-    label.appendChild(track);
-    registryFor(item.id).pinEls.add({ input, scope });
-    return label;
-  }
-
-  // A 'bool' item's own control: a switch styled like the pin toggle
-  // but larger, since it's the row's primary control rather than a
-  // secondary one.
-  function buildBoolControl(item) {
-    const label = document.createElement('label');
-    label.className = 'bool-toggle';
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = Boolean(CFG.get(item.id));
-    input.setAttribute('aria-label', item.label);
-    const track = document.createElement('span');
-    track.className = 'bool-toggle-track';
-    label.appendChild(input);
-    label.appendChild(track);
-    return { label, input };
-  }
-
-  // `compact` drops the min/max footer (used in the pinned HUD, where
-  // space is at a premium); `scope` tags this row's DOM nodes so a HUD
-  // rebuild can find and drop exactly its own previous nodes without
-  // touching the panel body's permanent copies.
-  function buildConfigRow(item, { compact = false, scope = 'panel' } = {}) {
-    const row = document.createElement('div');
-    row.className = 'config-row';
-
-    const head = document.createElement('div');
-    head.className = 'config-row-head';
-    const label = document.createElement('span');
-    label.className = 'config-row-label';
-    label.textContent = item.label;
-    const valueEl = document.createElement('span');
-    valueEl.className = 'config-row-value';
-    valueEl.textContent = formatValue(item, CFG.get(item.id));
-    head.appendChild(label);
-    head.appendChild(valueEl);
-    row.appendChild(head);
-
-    const control = document.createElement('div');
-    control.className = 'config-row-control';
-    let input;
-    if (item.type === 'bool') {
-      const bool = buildBoolControl(item);
-      input = bool.input;
-      input.addEventListener('change', () => {
-        CFG.set(item.id, input.checked);
-        syncValueDisplays(item.id);
-      });
-      control.appendChild(bool.label);
-    } else if (item.type === 'select') {
-      input = document.createElement('select');
-      item.options.forEach((opt) => {
-        const option = document.createElement('option');
-        option.value = opt.value;
-        option.textContent = opt.label;
-        input.appendChild(option);
-      });
-      input.value = String(CFG.get(item.id));
-      input.addEventListener('change', () => {
-        CFG.set(item.id, input.value);
-        syncValueDisplays(item.id);
-      });
-      control.appendChild(input);
-    } else {
-      input = document.createElement('input');
-      input.type = 'range';
-      input.min = String(item.min);
-      input.max = String(item.max);
-      input.step = String(item.step);
-      input.value = String(CFG.get(item.id));
-      input.addEventListener('input', () => {
-        CFG.set(item.id, Number(input.value));
-        syncValueDisplays(item.id);
-      });
-      control.appendChild(input);
-    }
-    control.appendChild(buildPinToggle(item, scope));
-    row.appendChild(control);
-
-    if (!compact && item.type !== 'bool' && item.type !== 'select') {
-      const bounds = document.createElement('div');
-      bounds.className = 'config-row-bounds';
-      const lo = document.createElement('span');
-      lo.textContent = `${item.min}${item.unit}`;
-      const hi = document.createElement('span');
-      hi.textContent = `${item.max}${item.unit}`;
-      bounds.appendChild(lo);
-      bounds.appendChild(hi);
-      row.appendChild(bounds);
-    }
-
-    registryFor(item.id).valueEls.add({ input, valueEl, scope });
-    return row;
-  }
-
-  function renderConfigBody() {
-    configBodyEl.innerHTML = '';
-    let currentGroup = null;
-    CFG.SCHEMA.forEach((item) => {
-      if (item.group !== currentGroup) {
-        currentGroup = item.group;
-        const heading = document.createElement('div');
-        heading.className = 'config-group-heading';
-        heading.textContent = currentGroup;
-        configBodyEl.appendChild(heading);
-      }
-      configBodyEl.appendChild(buildConfigRow(item, { scope: 'panel' }));
-    });
-  }
-
-  function renderPinnedHud() {
-    clearScope('hud');
-    pinnedHudEl.innerHTML = '';
-    const ids = CFG.pinnedIds();
-    pinnedHudEl.hidden = ids.length === 0;
-    ids.forEach((id) => {
-      const item = CFG.SCHEMA.find((i) => i.id === id);
-      pinnedHudEl.appendChild(buildConfigRow(item, { compact: true, scope: 'hud' }));
-    });
-  }
-
-  let configPanelOpen = false;
-  function setConfigPanelOpen(open) {
-    configPanelOpen = open;
-    configPanelEl.hidden = !open;
-  }
-  configToggleBtn.addEventListener('click', () => setConfigPanelOpen(!configPanelOpen));
-
-  document.getElementById('cfg-set-all-default').addEventListener('click', () => {
-    CFG.setAllAsDefault();
-  });
-  document.getElementById('cfg-reset-all-initial').addEventListener('click', () => {
-    CFG.resetAllToInitial();
-    refreshAllDisplays();
-  });
-  document.getElementById('cfg-reset-all-default').addEventListener('click', () => {
-    CFG.resetAllToDefault();
-    refreshAllDisplays();
-  });
-  document.getElementById('cfg-set-pinned-default').addEventListener('click', () => {
-    CFG.setPinnedAsDefault();
-  });
-  document.getElementById('cfg-reset-pinned-initial').addEventListener('click', () => {
-    CFG.resetPinnedToInitial();
-    refreshAllDisplays();
-  });
-  document.getElementById('cfg-reset-pinned-default').addEventListener('click', () => {
-    CFG.resetPinnedToDefault();
-    refreshAllDisplays();
-  });
-
-  // Clipboard first (the fast path); only fall back to a file download
-  // if the Clipboard API is unavailable or permission is denied — not
-  // every export needs to also drop a file when the copy worked fine.
-  exportBtn.addEventListener('click', () => {
-    const text = CFG.exportText();
-    const download = async () => {
-      // The artifact viewer's sandbox blocks anchor downloads.
-      if (window.claude?.use) {
-        try {
-          const downloads = await window.claude.use('downloads');
-          if (downloads) await downloads.save({ filename: 'dice-merge-config.txt', data: text });
-        } catch (err) {
-          /* declined or unavailable */
-        }
-        return;
-      }
-      const blob = new Blob([text], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'dice-merge-config.txt';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    };
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).catch(download);
-    } else {
-      download();
-    }
-  });
-
-  // --- Settings: gravity ---------------------------------------------
-  //
-  // The Settings dialog's gravity controls are a third home for the
-  // same two config items as the panel's Gravity group, so they register
-  // in rowRegistry (scope 'settings', no value label) like any other
-  // copy: a change here updates the panel and HUD rows, and a reset
-  // there updates these. Gravity is read fresh at each placement, so no
-  // new game is needed.
-
-  const gravityToggle = document.getElementById('gravity-toggle');
+  // Gravity is read at each placement, so changing it needs no new game.
   const gravityDirectionSelect = document.getElementById('gravity-direction-select');
-  const gravityDirectionItem = CFG.SCHEMA.find((i) => i.id === 'gravityDirection');
-
-  gravityDirectionItem.options.forEach((opt) => {
-    const option = document.createElement('option');
-    option.value = opt.value;
-    option.textContent = opt.label;
-    gravityDirectionSelect.appendChild(option);
+  CFG.item('gravityDirection').options.forEach((opt) => {
+    gravityDirectionSelect.append(new Option(opt.label, opt.value));
   });
 
-  function syncGravitySettings() {
-    gravityToggle.checked = Boolean(CFG.get('gravityEnabled'));
-    gravityDirectionSelect.value = String(CFG.get('gravityDirection'));
-    gravityDirectionSelect.disabled = !gravityToggle.checked;
-  }
-
-  registryFor('gravityEnabled').valueEls.add({ input: gravityToggle, valueEl: null, scope: 'settings' });
-  registryFor('gravityDirection').valueEls.add({ input: gravityDirectionSelect, valueEl: null, scope: 'settings' });
-
-  gravityToggle.addEventListener('change', () => {
-    CFG.set('gravityEnabled', gravityToggle.checked);
-    syncValueDisplays('gravityEnabled');
-    syncGravitySettings();
+  Panel.init();
+  Panel.bind('gravityEnabled', document.getElementById('gravity-toggle'), {
+    onSync: (on) => { gravityDirectionSelect.disabled = !on; },
   });
-  gravityDirectionSelect.addEventListener('change', () => {
-    CFG.set('gravityDirection', gravityDirectionSelect.value);
-    syncValueDisplays('gravityDirection');
-  });
-  settingsBtn.addEventListener('click', syncGravitySettings);
-  syncGravitySettings();
-
-  renderConfigBody();
-  renderPinnedHud();
+  Panel.bind('gravityDirection', gravityDirectionSelect);
 
   render();
 
