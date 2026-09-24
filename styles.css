@@ -1,46 +1,59 @@
+/* Deliberate single dark theme: a felt-black game table, matching the
+   tactile board-game reference this build was designed against. */
 :root {
   color-scheme: dark;
-  --bg: #000000;
-  --grid-line: #4a4a4a;
-  --cell-bg: #0a0a0a;
-  --accent: #4f8ef7;
-  --text: #f2f2f2;
-  --text-dim: #9a9a9a;
-  --die-radius: 12px;
+  --bg: #0a0908;
+  --felt: #050505;
+  --line: #3c3a37;
+  --cell: #0f0e0d;
+  --cell-hover: #171513;
+  --text: #f4f1ec;
+  --text-dim: #948d81;
+  --accent: #5b8ef2;
+  --accent-soft: rgba(91, 142, 242, 0.45);
+  --die-1: #cac4b8;
+  --die-2: #5b8ef2;
+  --die-3: #57b56a;
+  --die-4: #e8a23c;
+  --die-5: #d9564f;
+  --die-6: #9c6fd6;
+  --shadow: rgba(0, 0, 0, 0.5);
+  --font-display: 'Fredoka', system-ui, sans-serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
   /* Every non-board measurement below is sized off viewport height
-     (dvh), the same budget .board-shell competes for, and capped with
-     a small px floor/ceiling — never a bare px value. That's what
-     makes the board "win": on a short viewport these shrink together
-     with it instead of holding a fixed footprint that eats the
-     board's share. See the comment on .board-shell.
+     (dvh), the same budget .board-shell competes for, and capped
+     with a small px floor/ceiling — never a bare px value. That's
+     what makes the board "win": on a short viewport these shrink
+     together with it instead of holding a fixed footprint that eats
+     the board's share. See the comment on .board-shell.
 
-     --queue-die is the exception to "shrink as far as it wants": it's
-     the piece the player actually drags, so its floor is a real touch
-     target (~44px, the iOS/Android minimum) rather than a cosmetic
-     minimum — a die you can't reliably grab is a functional bug, not
-     just a smaller visual. --queue-die-next is purely a preview (never
+     --queue-die is the exception to "shrink as far as it wants":
+     it's the piece the player actually drags, so its floor is a
+     real touch target (~44px, the iOS/Android minimum) rather than
+     a cosmetic minimum. --queue-die-next is purely a preview (never
      touched), so it keeps a cosmetic floor. */
   --queue-die: clamp(44px, 3.6dvh, 56px);
   --queue-die-next: clamp(12px, 2.4dvh, 32px);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
 
 html, body {
-  height: 100%;
-  margin: 0;
   overscroll-behavior: none;
-  /* The layout below is designed to always fit within the viewport —
-     nothing here should ever need to scroll. */
+  height: 100%;
+  /* The layout below is designed to always fit within the viewport
+     — nothing here should ever need to scroll. */
   overflow: hidden;
 }
 
 body {
+  margin: 0;
   background: var(--bg);
+  background-image: radial-gradient(circle at 50% -10%, #14120f 0%, var(--bg) 55%);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-body);
   display: flex;
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
@@ -48,28 +61,26 @@ body {
 
 .app {
   width: 100%;
-  max-width: 480px;
+  max-width: 440px;
   height: 100vh;
   height: 100dvh;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: max(8px, env(safe-area-inset-top)) 16px max(8px, env(safe-area-inset-bottom));
+  padding-inline: 20px;
+  padding-block: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-bottom));
   gap: clamp(4px, 1.5dvh, 16px);
 }
 
 @media (max-width: 360px) {
-  .app {
-    padding-left: 12px;
-    padding-right: 12px;
-  }
+  .app { padding-inline: 12px; }
 }
 
 /* Everything except the board takes its natural size; the board is
    the one flexible element, so it's what shrinks first on a short
    viewport instead of the page overflowing into a scrollbar. */
 .scoreboard,
-.queue-panel,
+.queue,
 .toolbar {
   flex: 0 0 auto;
 }
@@ -82,10 +93,10 @@ body {
   align-items: center;
   justify-content: center;
   /* Establishes a query container so .board's cqh below can size
-     itself off this box's actual available height, not just its
-     width — a plain max-height on an aspect-ratio box clamps height
-     without feeding back into width, which squashes the board into a
-     non-square rectangle instead of shrinking it as a square. */
+     itself off this box's actual available height — a plain
+     max-height on an aspect-ratio box clamps height without
+     feeding back into width, squashing the board into a rectangle
+     instead of shrinking it as a square. */
   container-type: size;
 }
 
@@ -93,86 +104,111 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .score {
-  font-size: clamp(24px, min(14vw, 7dvh), 64px);
-  font-weight: 800;
+  font-family: var(--font-display);
+  font-size: clamp(22px, min(13vw, 7dvh), 64px);
+  font-weight: 700;
   color: var(--accent);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 0 24px var(--accent-soft);
 }
 
 .best {
-  font-size: clamp(11px, 1.8dvh, 14px);
+  font-size: clamp(10px, 1.8dvh, 13px);
+  font-weight: 600;
   color: var(--text-dim);
-  letter-spacing: 0.02em;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .board {
   --board-size: 5;
   width: 100%;
-  max-width: 420px;
+  max-width: 400px;
   /* Enhancement over the width:100% fallback above: picks whichever
-     of available width or available height is tighter, so the board
-     always shrinks as a square rather than a squashed rectangle. */
-  width: min(100%, 420px, 100cqh);
+     of available width or available height is tighter, so the
+     board always shrinks as a square rather than a squashed
+     rectangle. */
+  width: min(100%, 400px, 100cqh);
   aspect-ratio: 1 / 1;
   display: grid;
   grid-template-columns: repeat(var(--board-size), 1fr);
   grid-template-rows: repeat(var(--board-size), 1fr);
-  gap: 2px;
-  background: var(--grid-line);
-  border: 2px solid var(--grid-line);
-  border-radius: 4px;
-  overflow: hidden;
+  gap: 3px;
+  background: var(--line);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  padding: 3px;
+  box-shadow: 0 12px 32px var(--shadow), inset 0 1px 0 rgba(255,255,255,0.03);
 }
 
 .cell {
-  background: var(--cell-bg);
+  background: var(--cell);
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background var(--cfg-hover-duration, 100ms) ease;
+  transition: background var(--cfg-hover-duration, 120ms) ease;
 }
 
 .cell.preview-valid {
-  background: rgba(79, 142, 247, 0.28);
+  background: rgba(91, 142, 242, 0.28);
   box-shadow: inset 0 0 0 2px var(--accent);
 }
-
 .cell.preview-invalid {
-  background: rgba(232, 83, 79, 0.22);
-  box-shadow: inset 0 0 0 2px #e8534f;
+  background: rgba(217, 86, 79, 0.22);
+  box-shadow: inset 0 0 0 2px var(--die-5);
 }
 
-/* The pulse ring size/duration and every number in the merge-pop
-   keyframe below are read from --cfg-* custom properties, each with a
-   fallback matching its shipped value — config.js's panel overwrites
-   them on :root live, so a slider takes effect on the very next merge
-   with no reload. The per-element values (--merge-impact,
-   --reject-strength) are unrelated and stay as-is: those vary per
-   merge/rejection, not per tuning session. */
+/* A rejected piece bounced off this cell — harder if it was carrying
+   more mass. main.js sets --reject-strength to sqrt(mass) of the
+   rejected piece (D.scaleWithMass), so a value-1 piece (strength 1)
+   reproduces the original ±4px exactly. Capped so a heavy piece
+   can't shake a cell out of the grid. */
+@keyframes cell-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(max(calc(-1 * var(--cfg-shake-cap, 10px)), calc(-1 * var(--cfg-shake-amp, 4px) * var(--reject-strength, 1)))); }
+  75% { transform: translateX(min(var(--cfg-shake-cap, 10px), calc(var(--cfg-shake-amp, 4px) * var(--reject-strength, 1)))); }
+}
+.cell--shake { animation: cell-shake var(--cfg-shake-duration, 220ms) ease; }
+
+.die {
+  width: 84%;
+  height: 84%;
+  border-radius: 20%;
+  background: var(--die-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
+    inset 0 2px 0 rgba(255, 255, 255, 0.22),
+    0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
 @keyframes die-merge-target-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 142, 247, 0.55); }
-  50% { box-shadow: 0 0 0 var(--cfg-pulse-ring, 10px) rgba(79, 142, 247, 0); }
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft, rgba(91, 142, 242, 0.55)); }
+  50% { box-shadow: 0 0 0 var(--cfg-pulse-ring, 10px) rgba(91, 142, 242, 0); }
 }
-
 .die--merge-target {
   animation: die-merge-target-pulse var(--cfg-pulse-duration, 220ms) ease-out;
 }
 
 /* A merge past the 3-die baseline (see D.params.mergeMinCluster in
-   animate.js's highlightTargets) sends out one extra ring per die
-   beyond that — a real emanation, not a second animation squeezed onto
-   the die's own box-shadow: die-merge-target-pulse is a round trip
-   (compact -> expand+fade -> compact again), so re-triggering it
-   rapidly on one property looks like flickering, not distinct pulses.
-   Each extra ring is its own element instead, playing a one-way
-   grow-and-fade once (die-merge-target-ring-pulse below), with its
-   start time staggered by highlightTargets — overlapping rings are
-   what actually reads as "more than one ripple" on screen. */
+   highlightTargets) sends out one extra ring per die beyond that — a
+   real emanation, not a second animation squeezed onto the die's own
+   box-shadow: die-merge-target-pulse is a round trip (compact ->
+   expand+fade -> compact again), so re-triggering it rapidly on one
+   property looks like flickering, not distinct pulses. Each extra
+   ring is its own element instead, playing a one-way grow-and-fade
+   once (die-merge-target-ring-pulse below), with its start time
+   staggered by highlightTargets — overlapping rings are what
+   actually reads as "more than one ripple" on screen. */
 @keyframes die-merge-target-ring-pulse {
   from { transform: scale(1); opacity: 1; }
   to { transform: scale(1.7); opacity: 0; }
@@ -186,22 +222,24 @@ body {
   box-shadow: 0 0 0 2px var(--accent);
   /* Resting opacity is 0, not the box-shadow itself — an animation
      with the default fill-mode only overrides a property while it's
-     actively running; outside that window (waiting for its delay, or
-     finished) the property reverts to this base rule. Since only
-     opacity/transform are animated, resting at opacity 0 is what keeps
-     a not-yet-started or already-finished ring invisible instead of
-     snapping to a fully solid, unscaled ring. */
+     actively running; outside that window (waiting for its delay,
+     or finished) the property reverts to this base rule. Since only
+     opacity/transform are animated, resting at opacity 0 is what
+     keeps a not-yet-started or already-finished ring invisible
+     instead of snapping to a fully solid, unscaled ring. */
   opacity: 0;
   animation: die-merge-target-ring-pulse var(--cfg-pulse-burst-duration, 140ms) ease-out;
 }
 
 /* Impact scales with the mass the merge actually released (see
-   D.resolveClusterMass): render.js sets --merge-impact to that amount,
-   so a minimal 3-of-a-kind (releases 1) gives a light bump while a
-   bigger simultaneous cluster — which releases more mass even though
-   it lands on the same value+1 — visibly hits harder. Capped with
-   min() so a rare huge release doesn't blow the die out of its
-   cell. */
+   D.resolveClusterMass): renderBoard sets --merge-impact to that
+   amount, so a minimal 3-of-a-kind (releases 1) gives a light bump
+   while a bigger simultaneous cluster — which releases more mass
+   even though it lands on the same value+1 — visibly hits harder.
+   Capped with min() so a rare huge release doesn't blow the die out
+   of its cell. The scale/glow coefficients and duration are read
+   from --cfg-* custom properties (config.js's panel overwrites them
+   on :root live) with fallbacks matching the shipped values. */
 @keyframes die-merge-pop {
   0% { transform: scale(0.6); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
   45% {
@@ -210,76 +248,45 @@ body {
   }
   100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
 }
-
-.die--merge-pop {
-  animation: die-merge-pop var(--cfg-merge-pop-duration, 360ms) cubic-bezier(.25, .9, .3, 1.2);
-}
-
-/* A rejected piece bounced off this cell — harder if it was carrying
-   more mass. main.js sets --reject-strength to sqrt(mass) of the
-   rejected piece (D.scaleWithMass), so a value-1 piece (strength 1)
-   reproduces the original ±4px exactly. Capped so a heavy piece can't
-   shake a cell out of the grid. */
-@keyframes cell-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(max(calc(-1 * var(--cfg-shake-cap, 10px)), calc(-1 * var(--cfg-shake-amp, 4px) * var(--reject-strength, 1)))); }
-  75% { transform: translateX(min(var(--cfg-shake-cap, 10px), calc(var(--cfg-shake-amp, 4px) * var(--reject-strength, 1)))); }
-}
-
-.cell--shake {
-  animation: cell-shake var(--cfg-shake-duration, 220ms) ease;
-}
-
-.die {
-  width: 86%;
-  height: 86%;
-  border-radius: var(--die-radius);
-  background: var(--die-color);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+.die--merge-pop { animation: die-merge-pop var(--cfg-merge-pop-duration, 360ms) cubic-bezier(.25, .9, .3, 1.2); }
 
 .die-pips {
-  width: 62%;
-  height: 62%;
+  width: 60%;
+  height: 60%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   grid-template-rows: repeat(3, 1fr);
 }
 
-.pip-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+.pip-cell { display: flex; align-items: center; justify-content: center; }
 
 .pip {
-  width: 32%;
-  height: 32%;
+  width: 34%;
+  height: 34%;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.68);
 }
 
 .die-label {
-  font-weight: 800;
-  font-size: 1.6rem;
-  color: rgba(0, 0, 0, 0.75);
-}
-
-.queue-panel {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: clamp(2px, 0.8dvh, 10px);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: rgba(0, 0, 0, 0.72);
 }
 
 .queue-label {
   font-size: clamp(8px, 1.3dvh, 12px);
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 700;
   color: var(--text-dim);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(2px, 0.8dvh, 10px);
 }
 
 .piece {
@@ -290,16 +297,16 @@ body {
 }
 
 /* Reserves the tallest a piece can ever be (3 rows — the biggest
-   shape in SHAPE_LIBRARY) regardless of what's currently showing, so
-   rotating a piece between a 1-row and 3-row orientation never
-   changes this slot's own height. That keeps .queue-panel's total
-   height constant, which is what keeps .board-shell's available
-   space — and so the board's rendered size — stable across a
-   rotation. Sizing this from actual content instead (what it held
-   before this rule existed) makes the board grow and shrink under a
-   piece it has nothing to do with. Built from --queue-die, not a bare
-   px value, so this reserved footprint shrinks on a short viewport
-   instead of eating the board's share of it — see :root. */
+   shape in SHAPE_LIBRARY) regardless of what's currently showing,
+   so rotating a piece between a 1-row and 3-row orientation never
+   changes this slot's own height. That keeps .queue's total height
+   constant, which is what keeps .board-shell's available space —
+   and so the board's rendered size — stable across a rotation.
+   Sizing this from actual content instead makes the board grow and
+   shrink under a piece it has nothing to do with. Built from
+   --queue-die, not a bare px value, so this reserved footprint
+   shrinks on a short viewport instead of eating the board's share
+   of it — see :root. */
 .piece-slot {
   display: flex;
   align-items: center;
@@ -312,24 +319,17 @@ body {
 }
 
 .piece--current .die,
-.piece--current .piece-spacer {
-  width: var(--queue-die);
-  height: var(--queue-die);
-}
+.piece--current .piece-spacer { width: var(--queue-die); height: var(--queue-die); }
 
 .piece--next .die,
-.piece--next .piece-spacer {
-  width: var(--queue-die-next);
-  height: var(--queue-die-next);
-}
+.piece--next .piece-spacer { width: var(--queue-die-next); height: var(--queue-die-next); }
 
-.piece--next {
-  opacity: 0.75;
-}
+.piece--next { opacity: 0.7; }
 
-.die--current {
-  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.5);
-}
+.die--current { box-shadow:
+    0 0 0 3px var(--accent-soft),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.18),
+    inset 0 2px 0 rgba(255, 255, 255, 0.22); }
 
 .piece--current {
   cursor: grab;
@@ -344,10 +344,7 @@ body {
   position: relative;
   z-index: 20;
 }
-
-.piece--dragging .die {
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.45);
-}
+.piece--dragging .die { box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5); }
 
 /* Only while the pointer is actively tracking (not during the
    springback that follows release) — needed so elementFromPoint can
@@ -360,7 +357,6 @@ body {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
 .die--spin {
   animation: die-spin-360 var(--cfg-single-die-spin, 220ms) ease-out;
 }
@@ -369,9 +365,9 @@ body {
    general render() path) gets this pop — rotation redraws the same
    piece via a direct R.renderQueue call that never adds this class,
    so spinning a piece never replays an "arriving" animation for a
-   piece that was already there. Scale only, no opacity: entering and
-   settling into rotation both read as one visual language (motion),
-   not motion plus an unrelated fade. */
+   piece that was already there. Scale only, no opacity: entering
+   and settling into rotation both read as one visual language
+   (motion), not motion plus an unrelated fade. */
 .piece--entering {
   animation: piece-pop var(--cfg-entrance-duration, 160ms) ease-out;
 }
@@ -399,56 +395,51 @@ body {
   align-items: center;
   gap: clamp(2px, 0.8dvh, 8px);
   cursor: pointer;
-  font-family: inherit;
+  font-family: var(--font-body);
   touch-action: manipulation;
 }
+.icon-button:focus-visible .icon-circle { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .icon-circle {
-  width: clamp(28px, 5.5dvh, 56px);
-  height: clamp(28px, 5.5dvh, 56px);
+  width: clamp(28px, 5.5dvh, 60px);
+  height: clamp(28px, 5.5dvh, 60px);
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: #0a0908;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 6px 16px rgba(91, 142, 242, 0.35);
 }
 
 .icon-circle--ghost {
   background: none;
   color: var(--accent);
+  box-shadow: none;
 }
 
+.icon-label { font-size: clamp(9px, 1.6dvh, 14px); font-weight: 700; }
+
 /* Stays clickable and visible above the full-screen tuning panel
-   (z-index 60) even while it's open, without moving out of its normal
-   toolbar position — it's the one control that has to always be
-   reachable to toggle the panel closed again. */
+   (z-index 60) even while it's open, without moving out of its
+   normal toolbar position — it's the one control that has to always
+   be reachable to toggle the panel closed again. */
 #config-toggle-btn {
   position: relative;
   z-index: 70;
 }
 
-.icon-label {
-  font-size: clamp(9px, 1.6dvh, 15px);
-  font-weight: 600;
-}
-
-.settings-dialog {
-  background: #141414;
+dialog.settings-dialog {
+  background: #16140f;
   color: var(--text);
-  border: 1px solid #2c2c2c;
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 24px;
-  width: min(320px, 90vw);
+  width: min(320px, 88vw);
+  font-family: var(--font-body);
 }
-
-.settings-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.6);
-}
-
-.settings-dialog h2 {
-  margin-top: 0;
-}
+dialog.settings-dialog::backdrop { background: rgba(0, 0, 0, 0.65); }
+.settings-dialog h2 { font-family: var(--font-display); margin: 0 0 16px; }
 
 .settings-row {
   display: flex;
@@ -457,86 +448,62 @@ body {
   gap: 12px;
   margin: 16px 0;
 }
-
 .settings-row select {
-  background: #222;
+  background: #221f19;
   color: var(--text);
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 6px 10px;
+  font-family: var(--font-body);
 }
 
-.settings-row .bool-toggle {
-  flex: 0 0 46px;
-}
+.settings-row .bool-toggle { flex: 0 0 46px; }
+.settings-row select:disabled { opacity: 0.45; }
 
-.settings-row select:disabled {
-  opacity: 0.45;
-}
+.settings-hint { color: var(--text-dim); font-size: 13px; margin: 0 0 20px; }
 
-.settings-hint {
-  color: var(--text-dim);
-  font-size: 13px;
-  margin: 0 0 20px;
-}
-
-.dialog-close {
+.btn-primary {
   width: 100%;
-  padding: 10px;
+  padding: 11px;
   border-radius: 10px;
   border: none;
   background: var(--accent);
-  color: #fff;
+  color: #0a0908;
   font-weight: 700;
+  font-family: var(--font-body);
   cursor: pointer;
   touch-action: manipulation;
 }
 
-.dialog-close--ghost {
+.btn-primary--ghost {
   margin-top: 10px;
   background: none;
-  border: 1px solid #3a3a3a;
+  border: 1px solid var(--line);
   color: var(--text);
 }
 
 .game-over {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.75);
+  background: rgba(5, 4, 3, 0.82);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 20px;
 }
-
-.game-over[hidden] {
-  display: none;
-}
+.game-over[hidden] { display: none; }
 
 .game-over-card {
-  background: #141414;
-  border: 1px solid #2c2c2c;
-  border-radius: 16px;
+  background: #16140f;
+  border: 1px solid var(--line);
+  border-radius: 18px;
   padding: 32px;
   text-align: center;
   min-width: 240px;
 }
-
-.game-over-card h2 {
-  margin-top: 0;
-}
-
-.play-again {
-  margin-top: 16px;
-  padding: 10px 24px;
-  border-radius: 10px;
-  border: none;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
-  cursor: pointer;
-  touch-action: manipulation;
-}
+.game-over-card h2 { font-family: var(--font-display); margin: 0 0 4px; font-size: 1.6rem; }
+.game-over-card p { color: var(--text-dim); margin: 0 0 20px; font-variant-numeric: tabular-nums; }
+.game-over-card .final-score { color: var(--accent); font-weight: 800; font-size: 1.1em; }
 
 /* --- Tuning panel ------------------------------------------------- */
 
@@ -548,10 +515,7 @@ body {
   display: flex;
   flex-direction: column;
 }
-
-.config-panel[hidden] {
-  display: none;
-}
+.config-panel[hidden] { display: none; }
 
 .config-island {
   flex: 0 0 auto;
@@ -559,8 +523,8 @@ body {
   flex-wrap: wrap;
   gap: 8px 16px;
   padding: max(12px, env(safe-area-inset-top)) 14px 12px;
-  background: #111;
-  border-bottom: 1px solid #2c2c2c;
+  background: #100f0d;
+  border-bottom: 1px solid var(--line);
 }
 
 .config-island-group {
@@ -580,9 +544,10 @@ body {
 }
 
 .config-btn {
-  background: #1e1e1e;
-  border: 1px solid #333;
+  background: #1c1a16;
+  border: 1px solid var(--line);
   color: var(--text);
+  font-family: var(--font-body);
   font-size: 12px;
   font-weight: 600;
   padding: 7px 10px;
@@ -590,10 +555,7 @@ body {
   cursor: pointer;
   touch-action: manipulation;
 }
-
-.config-btn:active {
-  background: #2a2a2a;
-}
+.config-btn:active { background: #26231d; }
 
 /* Bottom padding clears the toggle button's own screen position, not
    just the safe area — #config-toggle-btn sits at z-index 70 (above
@@ -609,6 +571,7 @@ body {
 }
 
 .config-group-heading {
+  font-family: var(--font-display);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -616,17 +579,14 @@ body {
   color: var(--accent);
   margin: 20px 0 6px;
 }
+.config-group-heading:first-child { margin-top: 14px; }
 
-.config-group-heading:first-child {
-  margin-top: 14px;
-}
-
-/* A config "row" is a logical/visual unit, not a single line of text —
-   it holds however much content it needs (label, readout, a slider,
-   min/max hints) and is just visually separated from its neighbors. */
+/* A config "row" is a logical/visual unit, not a single line of
+   text — it holds however much content it needs and is just
+   visually separated from its neighbors. */
 .config-row {
   padding: 10px 0;
-  border-bottom: 1px solid #202020;
+  border-bottom: 1px solid #1c1a17;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -639,10 +599,7 @@ body {
   gap: 10px;
 }
 
-.config-row-label {
-  font-size: 13px;
-  color: var(--text);
-}
+.config-row-label { font-size: 13px; color: var(--text); }
 
 .config-row-value {
   font-size: 12px;
@@ -656,7 +613,6 @@ body {
   align-items: center;
   gap: 10px;
 }
-
 .config-row-control input[type="range"] {
   flex: 1 1 auto;
   accent-color: var(--accent);
@@ -664,18 +620,18 @@ body {
 
 .config-row-control select {
   flex: 1 1 auto;
-  background: #1e1e1e;
+  background: #221f19;
   color: var(--text);
-  border: 1px solid #333;
+  border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 10px;
+  font-family: var(--font-body);
   font-size: 13px;
 }
 
-/* Bool-item control: same switch look as .pin-toggle, but bigger since
-   it's the row's primary control (the slider's replacement) rather
-   than a secondary one. Sits flex: 1 1 auto so its track fills the
-   same space a range input would. */
+/* Bool-item control: same switch look as .pin-toggle, but bigger
+   since it's the row's primary control (the slider's replacement)
+   rather than a secondary one. */
 .bool-toggle {
   position: relative;
   flex: 1 1 auto;
@@ -683,7 +639,6 @@ body {
   height: 26px;
   display: inline-block;
 }
-
 .bool-toggle input {
   position: absolute;
   inset: 0;
@@ -691,7 +646,6 @@ body {
   margin: 0;
   cursor: pointer;
 }
-
 .bool-toggle-track {
   position: absolute;
   inset: 0;
@@ -700,7 +654,6 @@ body {
   transition: background 150ms ease;
   pointer-events: none;
 }
-
 .bool-toggle-track::before {
   content: '';
   position: absolute;
@@ -712,11 +665,9 @@ body {
   background: #888;
   transition: transform 150ms ease, background 150ms ease;
 }
-
 .bool-toggle input:checked + .bool-toggle-track {
   background: rgba(79, 142, 247, 0.35);
 }
-
 .bool-toggle input:checked + .bool-toggle-track::before {
   transform: translateX(20px);
   background: var(--accent);
@@ -724,13 +675,12 @@ body {
 
 .config-row-bounds {
   font-size: 10px;
-  color: #555;
+  color: #55504a;
   display: flex;
   justify-content: space-between;
 }
 
-/* Pin toggle: a small switch, not a checkbox that looks like a form
-   control — flipping it mirrors this row into the pinned HUD (see
+/* Pin toggle: flipping it mirrors this row into the pinned HUD (see
    .pinned-config) instead of saving anything. */
 .pin-toggle {
   position: relative;
@@ -739,7 +689,6 @@ body {
   height: 20px;
   display: inline-block;
 }
-
 .pin-toggle input {
   position: absolute;
   inset: 0;
@@ -747,16 +696,14 @@ body {
   margin: 0;
   cursor: pointer;
 }
-
 .pin-toggle-track {
   position: absolute;
   inset: 0;
-  background: #2c2c2c;
+  background: #2c2a26;
   border-radius: 999px;
   transition: background 150ms ease;
   pointer-events: none;
 }
-
 .pin-toggle-track::before {
   content: '';
   position: absolute;
@@ -765,14 +712,10 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #888;
+  background: #8a8378;
   transition: transform 150ms ease, background 150ms ease;
 }
-
-.pin-toggle input:checked + .pin-toggle-track {
-  background: rgba(79, 142, 247, 0.35);
-}
-
+.pin-toggle input:checked + .pin-toggle-track { background: var(--accent-soft); }
 .pin-toggle input:checked + .pin-toggle-track::before {
   transform: translateX(14px);
   background: var(--accent);
@@ -780,11 +723,11 @@ body {
 
 /* --- Pinned config HUD --------------------------------------------
    Floats over the game, anchored to the bottom edge, growing upward
-   as rows are pinned. Never reflows the board/queue/toolbar under it
-   — it's a pure overlay. Bounded by max-height with its own scroll so
+   as rows are pinned. Never reflows the board/queue/toolbar under
+   it — pure overlay. Bounded by max-height with its own scroll so
    pinning many rows can never creep up over the staging area or
-   board; it's fine for it to cover the toolbar/Settings button as it
-   grows, since it sits above everything. */
+   board; it's fine for it to cover the toolbar/Settings button as
+   it grows. */
 .pinned-config {
   position: fixed;
   left: 0;
@@ -794,22 +737,13 @@ body {
   max-height: 38vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background: rgba(10, 10, 10, 0.94);
+  background: rgba(10, 9, 8, 0.94);
   backdrop-filter: blur(6px);
-  border-top: 1px solid #2c2c2c;
+  border-top: 1px solid var(--line);
   border-radius: 14px 14px 0 0;
   padding: 10px 14px max(10px, env(safe-area-inset-bottom));
-  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 -8px 24px var(--shadow);
 }
-
-.pinned-config[hidden] {
-  display: none;
-}
-
-.pinned-config .config-row {
-  padding: 8px 0;
-}
-
-.pinned-config .config-row-label {
-  font-size: 12px;
-}
+.pinned-config[hidden] { display: none; }
+.pinned-config .config-row { padding: 8px 0; }
+.pinned-config .config-row-label { font-size: 12px; }

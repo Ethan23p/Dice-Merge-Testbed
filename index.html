@@ -4,118 +4,119 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Dice Merge</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Manrope:wght@500;600;700;800&display=swap" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="app">
-    <header class="scoreboard">
-      <div class="score" id="score">0</div>
-      <div class="best" id="best-score">Best 0</div>
-    </header>
+<div class="app">
+  <header class="scoreboard">
+    <div class="score" id="score">0</div>
+    <div class="best" id="best-score">Best 0</div>
+  </header>
 
-    <div class="board-shell">
-      <div class="board" id="board" role="grid" aria-label="Dice board"></div>
-    </div>
-
-    <div class="queue-panel" aria-label="Upcoming pieces">
-      <span class="queue-label">Drag to place · tap to rotate</span>
-      <div class="piece-slot" id="current-piece"></div>
-      <div class="piece-slot piece-slot--next" id="next-piece"></div>
-    </div>
-
-    <footer class="toolbar">
-      <button class="icon-button" id="config-toggle-btn" type="button" aria-label="Tuning panel">
-        <span class="icon-circle">
-          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
-            <path d="M4 6h10M17 6h3M4 12h3M9 12h11M4 18h13M20 18h0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-            <circle cx="14" cy="6" r="2.2" fill="currentColor"/>
-            <circle cx="6" cy="12" r="2.2" fill="currentColor"/>
-            <circle cx="16.5" cy="18" r="2.2" fill="currentColor"/>
-          </svg>
-        </span>
-        <span class="icon-label">Tuning</span>
-      </button>
-
-      <button class="icon-button" id="settings-btn" type="button">
-        <span class="icon-circle icon-circle--ghost">
-          <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
-            <path fill="currentColor" d="M19.4 13a7.4 7.4 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.5 7.5 0 0 0-1.7-1L14.3 2a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.5 2.7a7.5 7.5 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.4 7.4 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1c.5.4 1.1.7 1.7 1l.5 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.5-2.7c.6-.3 1.2-.6 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
-          </svg>
-        </span>
-        <span class="icon-label">Settings</span>
-      </button>
-    </footer>
-  </main>
-
-  <!-- Pinned config rows float over the game, anchored to the bottom,
-       growing upward, bounded so they can never reach the staging area
-       or board no matter how many are pinned (see .pinned-config). -->
-  <div class="pinned-config" id="pinned-config" hidden></div>
-
-  <dialog class="settings-dialog" id="settings-dialog">
-    <h2>Settings</h2>
-    <label class="settings-row">
-      <span>Board size</span>
-      <select id="board-size-select"></select>
-    </label>
-    <p class="settings-hint">Changing board size starts a new game.</p>
-    <!-- Gravity rows are the same config items as the tuning panel's
-         Gravity group (config.js), filled in by main.js and kept in sync
-         with the panel's copies. -->
-    <div class="settings-row">
-      <span>Gravity</span>
-      <label class="bool-toggle">
-        <input type="checkbox" id="gravity-toggle" aria-label="Gravity" />
-        <span class="bool-toggle-track"></span>
-      </label>
-    </div>
-    <label class="settings-row">
-      <span>Gravity direction</span>
-      <select id="gravity-direction-select"></select>
-    </label>
-    <button class="dialog-close" id="new-game-btn" type="button">New Game</button>
-    <button class="dialog-close dialog-close--ghost" id="close-settings-btn" type="button">Close</button>
-  </dialog>
-
-  <div class="game-over" id="game-over" hidden>
-    <div class="game-over-card">
-      <h2>Game Over</h2>
-      <p>Score: <span id="game-over-score">0</span></p>
-      <button class="play-again" id="play-again-btn" type="button">Play Again</button>
-    </div>
+  <div class="board-shell">
+    <div class="board" id="board" role="grid" aria-label="Dice board"></div>
   </div>
 
-  <!-- Full-screen tuning panel. Body is a flat scrollable list of every
-       config row; the island up top holds every action button (global
-       and pinned-only) — rows themselves carry no buttons but their
-       own pin toggle. -->
-  <div class="config-panel" id="config-panel" hidden>
-    <div class="config-island" id="config-island">
-      <div class="config-island-group">
-        <span class="config-island-label">All</span>
-        <button class="config-btn" id="cfg-set-all-default" type="button">Set current as default</button>
-        <button class="config-btn" id="cfg-reset-all-initial" type="button">Reset to initial</button>
-        <button class="config-btn" id="cfg-reset-all-default" type="button">Reset to default</button>
-      </div>
-      <div class="config-island-group">
-        <span class="config-island-label">Pinned only</span>
-        <button class="config-btn" id="cfg-set-pinned-default" type="button">Set current as default</button>
-        <button class="config-btn" id="cfg-reset-pinned-initial" type="button">Reset to initial</button>
-        <button class="config-btn" id="cfg-reset-pinned-default" type="button">Reset to default</button>
-      </div>
-      <div class="config-island-group">
-        <button class="config-btn" id="config-export-btn" type="button">Export config</button>
-      </div>
-    </div>
-    <div class="config-body" id="config-body"></div>
+  <div class="queue" aria-label="Upcoming pieces">
+    <span class="queue-label">Drag to place · tap to rotate</span>
+    <div class="piece-slot" id="current-piece"></div>
+    <div class="piece-slot piece-slot--next" id="next-piece"></div>
   </div>
 
-  <script src="src/data.js"></script>
-  <script src="src/config.js"></script>
-  <script src="src/state.js"></script>
-  <script src="src/render.js"></script>
-  <script src="src/physics.js"></script>
-  <script src="src/animate.js"></script>
-  <script src="src/main.js"></script>
+  <footer class="toolbar">
+    <button class="icon-button" id="config-toggle-btn" type="button" aria-label="Tuning panel">
+      <span class="icon-circle">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <path d="M4 6h10M17 6h3M4 12h3M9 12h11M4 18h13M20 18h0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="14" cy="6" r="2.2" fill="currentColor"/>
+          <circle cx="6" cy="12" r="2.2" fill="currentColor"/>
+          <circle cx="16.5" cy="18" r="2.2" fill="currentColor"/>
+        </svg>
+      </span>
+      <span class="icon-label">Tuning</span>
+    </button>
+
+    <button class="icon-button" id="settings-btn" type="button">
+      <span class="icon-circle icon-circle--ghost">
+        <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
+          <path fill="currentColor" d="M19.4 13a7.4 7.4 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.5 7.5 0 0 0-1.7-1L14.3 2a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.5 2.7a7.5 7.5 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.4 7.4 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1c.5.4 1.1.7 1.7 1l.5 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.5-2.7c.6-.3 1.2-.6 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
+        </svg>
+      </span>
+      <span class="icon-label">Settings</span>
+    </button>
+  </footer>
+</div>
+
+<!-- Pinned config rows float over the game, anchored to the bottom,
+     growing upward, bounded so they can never reach the staging area
+     or board no matter how many are pinned (see .pinned-config). -->
+<div class="pinned-config" id="pinned-config" hidden></div>
+
+<dialog class="settings-dialog" id="settings-dialog">
+  <h2>Settings</h2>
+  <label class="settings-row" for="board-size-select">
+    <span>Board size</span>
+    <select id="board-size-select"></select>
+  </label>
+  <p class="settings-hint">Changing board size starts a new game.</p>
+  <!-- Gravity rows are the same config items as the tuning panel's
+       Gravity group (DiceMergeConfig), filled in by start() and kept in
+       sync with the panel's copies. -->
+  <div class="settings-row">
+    <span>Gravity</span>
+    <label class="bool-toggle">
+      <input type="checkbox" id="gravity-toggle" aria-label="Gravity" />
+      <span class="bool-toggle-track"></span>
+    </label>
+  </div>
+  <label class="settings-row" for="gravity-direction-select">
+    <span>Gravity direction</span>
+    <select id="gravity-direction-select"></select>
+  </label>
+  <button class="btn-primary" id="new-game-btn" type="button">New Game</button>
+  <button class="btn-primary btn-primary--ghost" id="close-settings-btn" type="button">Close</button>
+</dialog>
+
+<div class="game-over" id="game-over" hidden>
+  <div class="game-over-card">
+    <h2>Game Over</h2>
+    <p>Score: <span class="final-score" id="game-over-score">0</span></p>
+    <button class="btn-primary" id="play-again-btn" type="button">Play Again</button>
+  </div>
+</div>
+
+<!-- Full-screen tuning panel. Body is a flat scrollable list of every
+     config row; the island up top holds every action button (global
+     and pinned-only) — rows themselves carry no buttons but their own
+     pin toggle. -->
+<div class="config-panel" id="config-panel" hidden>
+  <div class="config-island" id="config-island">
+    <div class="config-island-group">
+      <span class="config-island-label">All</span>
+      <button class="config-btn" id="cfg-set-all-default" type="button">Set current as default</button>
+      <button class="config-btn" id="cfg-reset-all-initial" type="button">Reset to initial</button>
+      <button class="config-btn" id="cfg-reset-all-default" type="button">Reset to default</button>
+    </div>
+    <div class="config-island-group">
+      <span class="config-island-label">Pinned only</span>
+      <button class="config-btn" id="cfg-set-pinned-default" type="button">Set current as default</button>
+      <button class="config-btn" id="cfg-reset-pinned-initial" type="button">Reset to initial</button>
+      <button class="config-btn" id="cfg-reset-pinned-default" type="button">Reset to default</button>
+    </div>
+    <div class="config-island-group">
+      <button class="config-btn" id="config-export-btn" type="button">Export config</button>
+    </div>
+  </div>
+  <div class="config-body" id="config-body"></div>
+</div>
+
+<script src="src/data.js"></script>
+<script src="src/config.js"></script>
+<script src="src/state.js"></script>
+<script src="src/render.js"></script>
+<script src="src/physics.js"></script>
+<script src="src/animate.js"></script>
+<script src="src/main.js"></script>
 </body>
 </html>
