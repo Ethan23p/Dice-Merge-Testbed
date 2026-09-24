@@ -74,27 +74,42 @@ const DiceMergeAnimate = (() => {
     if (extra === 0) return CFG.get('pulseDurationMs');
     return CFG.get('pulseDurationMs')
       + (extra - 1) * CFG.get('pulseBurstIntervalMs')
-      + CFG.get('pulseBurstDurationMs');
+      + Math.max(CFG.get('pulseBurstIntervalMs'), CFG.get('pulseBurstDurationMs'));
   }
 
-  // Marks the cells dice are converging on, on the already-drawn board. Each
-  // extra ripple is its own element with a staggered one-shot animation;
-  // restarting one animation on the die itself reads as flicker.
+  // Marks the cells dice are converging on, on the already-drawn board. After
+  // the first pulse, each die past the third adds a quick thump plus a ring,
+  // each stronger than the last. The survivor sits above the incoming dice so
+  // the train stays visible. `scale` is animated, never `transform`, which the
+  // pulse/pop keyframes own.
   function highlightTargets(boardEl, pops) {
     pops.forEach((pop) => {
       const die = R.cellAt(boardEl, pop.r, pop.c)?.querySelector('.die');
       if (!die) return;
       die.classList.add('die--merge-target');
       const extra = extraPulseCount(pop);
-      if (extra > 0) {
-        die.style.position = 'relative';
-        const intervalMs = CFG.get('pulseBurstIntervalMs');
-        for (let i = 0; i < extra; i++) {
-          const ring = document.createElement('span');
-          ring.className = 'merge-target-ring';
-          ring.style.animationDelay = `${CFG.get('pulseDurationMs') + i * intervalMs}ms`;
-          die.appendChild(ring);
-        }
+      if (extra === 0) return;
+      die.style.position = 'relative';
+      die.style.zIndex = '999';
+      const intervalMs = CFG.get('pulseBurstIntervalMs');
+      const ringMs = CFG.get('pulseBurstDurationMs');
+      for (let i = 0; i < extra; i++) {
+        const delay = CFG.get('pulseDurationMs') + i * intervalMs;
+        const strength = Math.min(1, (i + 1) / 4);
+        die.animate(
+          [{ scale: 1 }, { scale: 1 + 0.06 + 0.1 * strength }, { scale: 1 }],
+          { duration: Math.max(40, intervalMs), delay, easing: 'ease-out' },
+        );
+        const ring = document.createElement('span');
+        ring.className = 'merge-target-ring';
+        die.appendChild(ring);
+        ring.animate(
+          [
+            { opacity: 0.6 + 0.4 * strength, transform: 'scale(1)' },
+            { opacity: 0, transform: `scale(${1.5 + 0.7 * strength})` },
+          ],
+          { duration: ringMs, delay, easing: 'ease-out', fill: 'backwards' },
+        );
       }
     });
   }
