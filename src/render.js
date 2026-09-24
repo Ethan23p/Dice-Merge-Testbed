@@ -70,7 +70,6 @@ const DiceMergeRender = (() => {
     boardEl.innerHTML = '';
     boardEl.style.setProperty('--board-size', board.length);
     const pops = options.pops || [];
-    const targets = new Set((options.targetCells || []).map((c) => `${c.r},${c.c}`));
 
     const impactByKey = new Map(pops.map((p) => [`${p.r},${p.c}`, p.massReleased]));
 
@@ -89,7 +88,6 @@ const DiceMergeRender = (() => {
             die.classList.add('die--merge-pop');
             die.style.setProperty('--merge-impact', String(impactByKey.get(key)));
           }
-          if (targets.has(key)) die.classList.add('die--merge-target');
           cell.appendChild(die);
         }
         boardEl.appendChild(cell);
