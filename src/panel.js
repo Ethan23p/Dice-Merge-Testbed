@@ -46,7 +46,7 @@ const DiceMergePanel = (() => {
     const item = CFG.item(id);
     const value = CFG.get(id);
     entry(controls, id).forEach(({ input, valueEl, onSync }) => {
-      if (document.activeElement !== input) {
+      if (input && document.activeElement !== input) {
         if (item.type === 'bool') input.checked = Boolean(value);
         else input.value = String(value);
       }
@@ -68,9 +68,21 @@ const DiceMergePanel = (() => {
     });
   }
 
-  // Keeps a control outside the panel (e.g. in Settings) in sync with an id.
+  // Keeps a control outside the panel (e.g. in the menu) in sync with an id.
   function bind(id, input, { onSync } = {}) {
     register(id, input, { scope: 'external', onSync });
+    sync(id);
+  }
+
+  // For controls that aren't a single input (e.g. a row of buttons): onSync
+  // runs now and whenever the value changes anywhere.
+  function watch(id, onSync) {
+    entry(controls, id).add({ input: null, valueEl: null, scope: 'external', onSync });
+    sync(id);
+  }
+
+  function set(id, value) {
+    CFG.set(id, value);
     sync(id);
   }
 
@@ -84,6 +96,13 @@ const DiceMergePanel = (() => {
     track.className = `${className}-track`;
     label.append(input, track);
     return { label, input };
+  }
+
+  // A bound on/off toggle for a bool item, for use outside the panel.
+  function boolToggle(id) {
+    const { label, input } = toggle('bool-toggle', CFG.item(id).label);
+    bind(id, input);
+    return label;
   }
 
   function buildControl(item) {
@@ -225,5 +244,5 @@ const DiceMergePanel = (() => {
     renderHud();
   }
 
-  return { init, bind };
+  return { init, bind, watch, set, boolToggle };
 })();

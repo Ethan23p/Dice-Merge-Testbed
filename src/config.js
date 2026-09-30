@@ -62,6 +62,7 @@ const DiceMergeConfig = (() => {
     { id: 'pieceWeight2', group: 'Balance & Spawn', label: 'Piece-size weight: 2-cell', unit: '', initial: 35, min: 0, max: 1000, step: 1, apply: { type: 'pieceWeight', index: 1 } },
     { id: 'pieceWeight3', group: 'Balance & Spawn', label: 'Piece-size weight: 3-cell', unit: '', initial: 25, min: 0, max: 1000, step: 1, apply: { type: 'pieceWeight', index: 2 } },
     { id: 'mergeMinCluster', group: 'Balance & Spawn', label: 'Merge threshold (dice needed)', unit: '', initial: 3, min: 2, max: 20, step: 1, apply: { type: 'data', key: 'mergeMinCluster' } },
+    { id: 'maxPieceSize', group: 'Balance & Spawn', label: 'Cluster size (largest piece, in dice)', unit: '', initial: 3, min: 1, max: 3, step: 1, apply: { type: 'data', key: 'maxPieceSize' } },
     { id: 'noRepeatInCluster', group: 'Balance & Spawn', label: 'No repeat die value in a piece', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'noRepeatInCluster' } },
     { id: 'forcePairInTriple', group: 'Balance & Spawn', label: '3-cell pieces: force one repeated pair', unit: '', type: 'bool', initial: true, apply: { type: 'data', key: 'forcePairInTriple' } },
 
@@ -106,6 +107,10 @@ const DiceMergeConfig = (() => {
     return Math.min(item.max, Math.max(item.min, value));
   }
 
+  // A game mode pins some items to its own values while it is active, without
+  // touching what the player stored (Custom reads the store as usual).
+  let overrides = {};
+
   function item(id) {
     return byId.get(id);
   }
@@ -124,8 +129,9 @@ const DiceMergeConfig = (() => {
     return clamp(item, id in store.current ? store.current[id] : defaultOf(id));
   }
 
-  function applyOne(item, value) {
+  function applyOne(item, stored) {
     const D = DiceMergeData;
+    const value = item.id in overrides ? overrides[item.id] : stored;
     switch (item.apply.type) {
       case 'data':
         D.params[item.apply.key] = value;
@@ -143,6 +149,11 @@ const DiceMergeConfig = (() => {
 
   function applyAll() {
     SCHEMA.forEach((item) => applyOne(item, currentOf(item.id)));
+  }
+
+  function setOverrides(map) {
+    overrides = { ...map };
+    applyAll();
   }
 
   function get(id) {
@@ -241,6 +252,7 @@ const DiceMergeConfig = (() => {
   return {
     SCHEMA,
     item,
+    setOverrides,
     get,
     set,
     setAsDefault,

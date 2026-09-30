@@ -37,13 +37,13 @@
       <span class="icon-label">Tuning</span>
     </button>
 
-    <button class="icon-button" id="settings-btn" type="button">
+    <button class="icon-button" id="menu-btn" type="button">
       <span class="icon-circle icon-circle--ghost">
         <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true">
-          <path fill="currentColor" d="M19.4 13a7.4 7.4 0 0 0 0-2l2.1-1.6a.5.5 0 0 0 .1-.6l-2-3.5a.5.5 0 0 0-.6-.2l-2.5 1a7.5 7.5 0 0 0-1.7-1L14.3 2a.5.5 0 0 0-.5-.4h-4a.5.5 0 0 0-.5.4l-.5 2.7a7.5 7.5 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.5a.5.5 0 0 0 .1.6L4.6 11a7.4 7.4 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.6l2 3.5a.5.5 0 0 0 .6.2l2.5-1c.5.4 1.1.7 1.7 1l.5 2.7a.5.5 0 0 0 .5.4h4a.5.5 0 0 0 .5-.4l.5-2.7c.6-.3 1.2-.6 1.7-1l2.5 1a.5.5 0 0 0 .6-.2l2-3.5a.5.5 0 0 0-.1-.6L19.4 13zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/>
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
         </svg>
       </span>
-      <span class="icon-label">Settings</span>
+      <span class="icon-label">Menu</span>
     </button>
   </footer>
 </div>
@@ -53,36 +53,25 @@
      or board no matter how many are pinned (see .pinned-config). -->
 <div class="pinned-config" id="pinned-config" hidden></div>
 
-<dialog class="settings-dialog" id="settings-dialog">
-  <h2>Settings</h2>
-  <label class="settings-row" for="board-size-select">
-    <span>Board size</span>
-    <select id="board-size-select"></select>
-  </label>
-  <p class="settings-hint">Changing board size starts a new game.</p>
-  <!-- Gravity rows are the same config items as the tuning panel's
-       Gravity group (DiceMergeConfig), filled in by start() and kept in
-       sync with the panel's copies. -->
-  <div class="settings-row">
-    <span>Gravity</span>
-    <label class="bool-toggle">
-      <input type="checkbox" id="gravity-toggle" aria-label="Gravity" />
-      <span class="bool-toggle-track"></span>
-    </label>
+<!-- Second screen, laid over the game. Sits below the Tuning panel and its
+     button so Tuning stays reachable from here. Cards are built by menu.js. -->
+<div class="menu" id="menu" hidden>
+  <div class="menu-inner">
+    <header class="menu-hero">
+      <div class="menu-dice" id="menu-dice" aria-hidden="true"></div>
+      <h1 class="menu-title">Dice Merge</h1>
+    </header>
+    <button class="menu-continue" id="menu-continue" type="button" hidden></button>
+    <div class="mode-list" id="mode-list"></div>
   </div>
-  <label class="settings-row" for="gravity-direction-select">
-    <span>Gravity direction</span>
-    <select id="gravity-direction-select"></select>
-  </label>
-  <button class="btn-primary" id="new-game-btn" type="button">New Game</button>
-  <button class="btn-primary btn-primary--ghost" id="close-settings-btn" type="button">Close</button>
-</dialog>
+</div>
 
 <div class="game-over" id="game-over" hidden>
   <div class="game-over-card">
     <h2>Game Over</h2>
     <p>Score: <span class="final-score" id="game-over-score">0</span></p>
     <button class="btn-primary" id="play-again-btn" type="button">Play Again</button>
+    <button class="btn-primary btn-primary--ghost" id="game-over-menu-btn" type="button">Menu</button>
   </div>
 </div>
 
@@ -108,16 +97,19 @@
       <button class="config-btn" id="config-export-btn" type="button">Export config</button>
     </div>
   </div>
+  <p class="config-note" id="config-mode-note" hidden></p>
   <div class="config-body" id="config-body"></div>
 </div>
 
 <script src="src/data.js"></script>
 <script src="src/config.js"></script>
+<script src="src/modes.js"></script>
 <script src="src/state.js"></script>
 <script src="src/render.js"></script>
 <script src="src/physics.js"></script>
 <script src="src/animate.js"></script>
 <script src="src/panel.js"></script>
+<script src="src/menu.js"></script>
 <script src="src/main.js"></script>
 </body>
 </html>
