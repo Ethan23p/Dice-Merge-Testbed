@@ -28,10 +28,6 @@ const DiceMergeConfig = (() => {
     { id: 'settleBeatMs', group: 'Merge Timing', label: 'Pause between cascade waves', unit: 'ms', initial: 70, min: 0, max: 3000, step: 10, apply: { type: 'main' } },
     { id: 'landingBeatMs', group: 'Merge Timing', label: 'Pause before a merge starts converging', unit: 'ms', initial: 0, min: 0, max: 3000, step: 10, apply: { type: 'main' } },
 
-    { id: 'pulseRingPx', group: 'Merge Impact', label: 'Merge-target pulse ring size', unit: 'px', initial: 10, min: 0, max: 250, step: 2, apply: { type: 'css', varName: '--cfg-pulse-ring', unit: 'px' } },
-    { id: 'pulseDurationMs', group: 'Merge Impact', label: 'Merge-target pulse duration', unit: 'ms', initial: 220, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-pulse-duration', unit: 'ms' } },
-    { id: 'pulseBurstDurationMs', group: 'Merge Impact', label: 'Extra ring duration (merges over 3 dice)', unit: 'ms', initial: 140, min: 0, max: 2000, step: 5, apply: { type: 'css', varName: '--cfg-pulse-burst-duration', unit: 'ms' } },
-    { id: 'pulseBurstIntervalMs', group: 'Merge Impact', label: 'Extra ring stagger (time between ripples)', unit: 'ms', initial: 50, min: 0, max: 1000, step: 5, apply: { type: 'main' } },
     { id: 'popBaseScale', group: 'Merge Impact', label: 'Merge-pop base scale', unit: '×', initial: 1.15, min: 0.1, max: 8, step: 0.05, apply: { type: 'css', varName: '--cfg-merge-pop-base', unit: '' } },
     { id: 'popPerImpactScale', group: 'Merge Impact', label: 'Merge-pop scale per unit impact', unit: '×', initial: 0.09, min: 0, max: 3, step: 0.01, apply: { type: 'css', varName: '--cfg-merge-pop-per-impact', unit: '' } },
     { id: 'popScaleCap', group: 'Merge Impact', label: 'Merge-pop scale cap', unit: '×', initial: 1.6, min: 1, max: 15, step: 0.1, apply: { type: 'css', varName: '--cfg-merge-pop-cap', unit: '' } },
@@ -40,6 +36,14 @@ const DiceMergeConfig = (() => {
     { id: 'popGlowCapPx', group: 'Merge Impact', label: 'Merge-pop glow cap', unit: 'px', initial: 24, min: 0, max: 500, step: 5, apply: { type: 'css', varName: '--cfg-merge-pop-glow-cap', unit: 'px' } },
     { id: 'popDurationMs', group: 'Merge Impact', label: 'Merge-pop duration', unit: 'ms', initial: 360, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-merge-pop-duration', unit: 'ms' } },
 
+    { id: 'sonarBeatMs', group: 'Sonar Pulse', label: 'Time between landings (beat period)', unit: 'ms', initial: 110, min: 20, max: 1000, step: 5, apply: { type: 'main' } },
+    { id: 'sonarSpeedUpPct', group: 'Sonar Pulse', label: 'Rhythm speed-up per beat', unit: '%', initial: 10, min: 0, max: 60, step: 1, apply: { type: 'main' } },
+    { id: 'sonarRingMs', group: 'Sonar Pulse', label: 'Ring lifetime', unit: 'ms', initial: 380, min: 40, max: 2000, step: 10, apply: { type: 'main' } },
+    { id: 'sonarRingPx', group: 'Sonar Pulse', label: 'Ring travel distance', unit: 'px', initial: 22, min: 0, max: 200, step: 1, apply: { type: 'main' } },
+    { id: 'sonarRingWidthPx', group: 'Sonar Pulse', label: 'Ring line width', unit: 'px', initial: 3, min: 1, max: 20, step: 1, apply: { type: 'main' } },
+    { id: 'sonarBeatScale', group: 'Sonar Pulse', label: 'Die beat scale (peak)', unit: '×', initial: 1.1, min: 1, max: 2, step: 0.01, apply: { type: 'main' } },
+    { id: 'sonarBuildPct', group: 'Sonar Pulse', label: 'Strength ramp (first beat as % of last)', unit: '%', initial: 60, min: 0, max: 100, step: 5, apply: { type: 'main' } },
+
     { id: 'snapbackStiffness', group: 'Rejected Drop', label: 'Snapback stiffness', unit: '', initial: 785, min: 0, max: 6000, step: 5, apply: { type: 'main' } },
     { id: 'snapbackDamping', group: 'Rejected Drop', label: 'Snapback damping', unit: '', initial: 95, min: 0, max: 600, step: 1, apply: { type: 'main' } },
     { id: 'shakeAmpPx', group: 'Rejected Drop', label: 'Shake amplitude (base)', unit: 'px', initial: 4, min: 0, max: 150, step: 1, apply: { type: 'css', varName: '--cfg-shake-amp', unit: 'px' } },
@@ -47,8 +51,9 @@ const DiceMergeConfig = (() => {
     { id: 'shakeDurationMs', group: 'Rejected Drop', label: 'Shake duration', unit: 'ms', initial: 220, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-shake-duration', unit: 'ms' } },
 
     { id: 'dragThresholdPx', group: 'Input Feel', label: 'Drag threshold', unit: 'px', initial: 38, min: 0, max: 300, step: 1, apply: { type: 'main' } },
-    { id: 'hoverDurationMs', group: 'Input Feel', label: 'Cell hover-preview transition', unit: 'ms', initial: 70, min: 0, max: 3000, step: 10, apply: { type: 'css', varName: '--cfg-hover-duration', unit: 'ms' } },
-    { id: 'dragLiftScale', group: 'Input Feel', label: 'Drag lift (× piece cell size)', unit: '×', initial: 1.2, min: 0, max: 10, step: 0.1, apply: { type: 'main' } },
+    { id: 'hoverDurationMs', group: 'Input Feel', label: 'Cell hover-preview transition', unit: 'ms', initial: 0, min: 0, max: 3000, step: 10, apply: { type: 'css', varName: '--cfg-hover-duration', unit: 'ms' } },
+    { id: 'dragLiftMs', group: 'Input Feel', label: 'Drag lift-off duration', unit: 'ms', initial: 150, min: 0, max: 1000, step: 10, apply: { type: 'main' } },
+    { id: 'dragLiftScale', group: 'Input Feel', label: 'Drag lift (× piece cell size)', unit: '×', initial: 2.5, min: 0, max: 10, step: 0.1, apply: { type: 'main' } },
 
     { id: 'entranceScale', group: 'Piece Entrance', label: 'Entrance start scale', unit: '×', initial: 0.85, min: 0, max: 3, step: 0.01, apply: { type: 'css', varName: '--cfg-entrance-scale', unit: '' } },
     { id: 'entranceDurationMs', group: 'Piece Entrance', label: 'Entrance duration', unit: 'ms', initial: 160, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-entrance-duration', unit: 'ms' } },
@@ -62,6 +67,7 @@ const DiceMergeConfig = (() => {
     { id: 'pieceWeight2', group: 'Balance & Spawn', label: 'Piece-size weight: 2-cell', unit: '', initial: 35, min: 0, max: 1000, step: 1, apply: { type: 'pieceWeight', index: 1 } },
     { id: 'pieceWeight3', group: 'Balance & Spawn', label: 'Piece-size weight: 3-cell', unit: '', initial: 25, min: 0, max: 1000, step: 1, apply: { type: 'pieceWeight', index: 2 } },
     { id: 'mergeMinCluster', group: 'Balance & Spawn', label: 'Merge threshold (dice needed)', unit: '', initial: 3, min: 2, max: 20, step: 1, apply: { type: 'data', key: 'mergeMinCluster' } },
+    { id: 'maxPieceSize', group: 'Balance & Spawn', label: 'Cluster size (largest piece, in dice)', unit: '', initial: 3, min: 1, max: 3, step: 1, apply: { type: 'data', key: 'maxPieceSize' } },
     { id: 'noRepeatInCluster', group: 'Balance & Spawn', label: 'No repeat die value in a piece', unit: '', type: 'bool', initial: false, apply: { type: 'data', key: 'noRepeatInCluster' } },
     { id: 'forcePairInTriple', group: 'Balance & Spawn', label: '3-cell pieces: force one repeated pair', unit: '', type: 'bool', initial: true, apply: { type: 'data', key: 'forcePairInTriple' } },
 
@@ -106,6 +112,10 @@ const DiceMergeConfig = (() => {
     return Math.min(item.max, Math.max(item.min, value));
   }
 
+  // A game mode pins some items to its own values while it is active, without
+  // touching what the player stored (Custom reads the store as usual).
+  let overrides = {};
+
   function item(id) {
     return byId.get(id);
   }
@@ -124,8 +134,9 @@ const DiceMergeConfig = (() => {
     return clamp(item, id in store.current ? store.current[id] : defaultOf(id));
   }
 
-  function applyOne(item, value) {
+  function applyOne(item, stored) {
     const D = DiceMergeData;
+    const value = item.id in overrides ? overrides[item.id] : stored;
     switch (item.apply.type) {
       case 'data':
         D.params[item.apply.key] = value;
@@ -143,6 +154,11 @@ const DiceMergeConfig = (() => {
 
   function applyAll() {
     SCHEMA.forEach((item) => applyOne(item, currentOf(item.id)));
+  }
+
+  function setOverrides(map) {
+    overrides = { ...map };
+    applyAll();
   }
 
   function get(id) {
@@ -241,6 +257,7 @@ const DiceMergeConfig = (() => {
   return {
     SCHEMA,
     item,
+    setOverrides,
     get,
     set,
     setAsDefault,

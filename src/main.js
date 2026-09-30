@@ -1,5 +1,5 @@
 /*
- * Wiring: input, persistence, and the Settings dialog. The current piece
+ * Wiring: input, persistence, and the menu. The current piece
  * is dragged onto the board, anchored by whichever die was grabbed; a
  * press that never passes the drag threshold is a tap, which rotates.
  *
@@ -17,20 +17,20 @@ function start(hotData = {}) {
   const Anim = DiceMergeAnimate;
   const CFG = DiceMergeConfig;
   const Panel = DiceMergePanel;
+  const Modes = DiceMergeModes;
+  const Menu = DiceMergeMenu;
 
   const boardEl = document.getElementById('board');
   const currentPieceEl = document.getElementById('current-piece');
   const nextPieceEl = document.getElementById('next-piece');
   const scoreEl = document.getElementById('score');
   const bestEl = document.getElementById('best-score');
-  const newGameBtn = document.getElementById('new-game-btn');
-  const settingsBtn = document.getElementById('settings-btn');
-  const settingsDialog = document.getElementById('settings-dialog');
-  const closeSettingsBtn = document.getElementById('close-settings-btn');
-  const boardSizeSelect = document.getElementById('board-size-select');
+  const menuBtn = document.getElementById('menu-btn');
+  const configNoteEl = document.getElementById('config-mode-note');
   const gameOverEl = document.getElementById('game-over');
   const gameOverScoreEl = document.getElementById('game-over-score');
   const playAgainBtn = document.getElementById('play-again-btn');
+  const gameOverMenuBtn = document.getElementById('game-over-menu-btn');
 
   const STORAGE_KEY = 'dice-merge:v3';
 
@@ -52,22 +52,21 @@ function start(hotData = {}) {
   }
 
   // Saved after every change, so a reload resumes the game. rng isn't saved.
+  // Each mode keeps its own game and best score.
   function persistGameState() {
-    persist({
-      game: {
-        config: state.config,
-        board: state.board,
-        queue: state.queue,
-        score: state.score,
-        moves: state.moves,
-        gameOver: state.gameOver,
-      },
-    });
+    games[modeId] = {
+      config: state.config,
+      board: state.board,
+      queue: state.queue,
+      score: state.score,
+      moves: state.moves,
+      gameOver: state.gameOver,
+    };
+    persist({ games });
   }
 
-  // Only resumes a game saved at the currently selected board size.
-  function restoredState(saved, config) {
-    const g = saved.game;
+  // Only resumes a game saved at the board size the mode currently uses.
+  function restoredState(g, config) {
     if (!g || !Array.isArray(g.board) || !Array.isArray(g.queue)) return null;
     if (!g.config || g.config.boardSize !== config.boardSize) return null;
     return {
@@ -82,15 +81,36 @@ function start(hotData = {}) {
   }
 
   let saved = loadSaved();
-  let config = hotData.config || {
-    ...D.DEFAULT_CONFIG,
-    boardSize: saved.boardSize || D.DEFAULT_CONFIG.boardSize,
-  };
-  let bestScore = hotData.bestScore ?? (saved.bestScore || 0);
+  // Before modes there was one game, one best and one board size; they become Custom's.
+  const games = saved.games || (saved.game ? { custom: saved.game } : {});
+  const bests = saved.best || (saved.bestScore ? { custom: saved.bestScore } : {});
+  let customBoardSize = D.BOARD_SIZE_OPTIONS.includes(saved.customBoardSize)
+    ? saved.customBoardSize
+    : (D.BOARD_SIZE_OPTIONS.includes(saved.boardSize) ? saved.boardSize : D.DEFAULT_CONFIG.boardSize);
+
+  let modeId = Modes.byId(hotData.modeId || saved.mode) ? (hotData.modeId || saved.mode) : 'custom';
+  CFG.setOverrides(Modes.byId(modeId).rules);
+
+  function gameConfig(id) {
+    const mode = Modes.byId(id);
+    return { ...D.DEFAULT_CONFIG, boardSize: mode.custom ? customBoardSize : mode.boardSize };
+  }
+
+  // The mode's game if the player could pick it back up: unfinished, past its
+  // first move, and at the board size the mode uses now. The live game counts
+  // whatever its size, so the menu can always lead back to it.
+  function resumable(id) {
+    if (id === modeId && !state.gameOver && state.moves > 0) return state;
+    const g = restoredState(games[id], gameConfig(id));
+    return g && !g.gameOver && g.moves > 0 ? g : null;
+  }
+
+  let config = hotData.config || gameConfig(modeId);
+  let bestScore = hotData.bestScore ?? (bests[modeId] || 0);
   let state = hotData.board
     ? { config, board: hotData.board, queue: hotData.queue, score: hotData.score,
         moves: hotData.moves, gameOver: hotData.gameOver, rng: Math.random }
-    : restoredState(saved, config) || S.createState(config);
+    : restoredState(games[modeId], config) || S.createState(config);
 
   function render() {
     R.renderBoard(boardEl, state.board, {});
@@ -100,13 +120,15 @@ function start(hotData = {}) {
     const enteringPieceEl = currentPieceEl.querySelector('.piece');
     if (enteringPieceEl) enteringPieceEl.classList.add('piece--entering');
     R.renderScore(scoreEl, state);
-    bestEl.textContent = `Best ${bestScore}`;
+    const modeName = Modes.byId(modeId).name;
+    bestEl.textContent = `${modeName} · Best ${bestScore}`;
 
     if (state.gameOver) {
       if (state.score > bestScore) {
         bestScore = state.score;
-        persist({ bestScore });
-        bestEl.textContent = `Best ${bestScore}`;
+        bests[modeId] = bestScore;
+        persist({ best: bests });
+        bestEl.textContent = `${modeName} · Best ${bestScore}`;
       }
       gameOverScoreEl.textContent = String(state.score);
       gameOverEl.hidden = false;
@@ -121,6 +143,33 @@ function start(hotData = {}) {
     state = S.createState(config);
     persistGameState();
     render();
+  }
+
+  function updateConfigNote() {
+    const pinned = Object.keys(Modes.byId(modeId).rules);
+    configNoteEl.hidden = pinned.length === 0;
+    configNoteEl.textContent = `${Modes.byId(modeId).name} sets ${pinned.map((id) => CFG.item(id).label).join(', ')}. ` +
+      'Changing those here only applies in Custom.';
+  }
+
+  // Starts `id` fresh, or picks its unfinished game back up. Picking up the
+  // game already on screen just closes the menu.
+  function playMode(id, { resume }) {
+    if (Anim.isPlaying()) return;
+    const live = resume && id === modeId && resumable(id);
+    if (!live) {
+      const picked = resume ? resumable(id) : null;
+      modeId = id;
+      persist({ mode: id });
+      CFG.setOverrides(Modes.byId(id).rules);
+      config = gameConfig(id);
+      state = picked || S.createState(config);
+      bestScore = bests[id] || 0;
+      persistGameState();
+      updateConfigNote();
+      render();
+    }
+    Menu.hide();
   }
 
   function commitPlacement(target, selected) {
@@ -382,9 +431,18 @@ function start(hotData = {}) {
       // the cell under it; it's dropped on release, while --dragging stays for the
       // springback.
       drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
+      // By now the finger is a threshold's distance from where it landed, and
+      // `transform` (below) puts the piece there at once. `translate` starts by
+      // cancelling that jump and eases out to the lift, so the piece leaves its
+      // slot smoothly instead of teleporting. It is a separate property because
+      // easing the finger offset itself would make the piece lag the finger.
+      drag.liftAnim = drag.pieceEl.animate(
+        [{ translate: `${-dx}px ${-dy}px` }, { translate: `0 ${-drag.liftPx}px` }],
+        { duration: CFG.get('dragLiftMs'), easing: 'cubic-bezier(.2, .8, .3, 1)', fill: 'forwards' },
+      );
     }
 
-    drag.pieceEl.style.transform = `translate(${dx}px, ${dy - drag.liftPx}px)`;
+    drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
     // Hit-test at the lifted position, where the piece is drawn.
     updateDragPreview(e.clientX, e.clientY - drag.liftPx);
   }
@@ -397,6 +455,15 @@ function start(hotData = {}) {
     pieceEl.removeEventListener('pointercancel', onPointerCancel);
 
     pieceEl.classList.remove('piece--tracking');
+    // Fold the lift (however far it has got) into `transform`, which the
+    // springback drives.
+    if (dragging) {
+      const [ex = 0, ey = 0] = getComputedStyle(pieceEl).translate.split(' ').map(parseFloat);
+      drag.liftAnim.cancel();
+      drag.targetX += ex || 0;
+      drag.targetY += ey || 0;
+      pieceEl.style.transform = `translate(${drag.targetX}px, ${drag.targetY}px)`;
+    }
     clearPreview();
 
     if (!dragging) {
@@ -413,7 +480,7 @@ function start(hotData = {}) {
     }
 
     if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c), drag.mass);
-    springBack(pieceEl, drag.targetX, drag.targetY - drag.liftPx, drag.mass);
+    springBack(pieceEl, drag.targetX, drag.targetY, drag.mass);
     drag = null;
   }
 
@@ -429,44 +496,26 @@ function start(hotData = {}) {
 
   currentPieceEl.addEventListener('pointerdown', onPointerDown);
 
-  newGameBtn.addEventListener('click', () => {
-    settingsDialog.close();
-    newGame();
-  });
   playAgainBtn.addEventListener('click', newGame);
-
-  settingsBtn.addEventListener('click', () => settingsDialog.showModal());
-  closeSettingsBtn.addEventListener('click', () => settingsDialog.close());
-  settingsDialog.addEventListener('click', (e) => {
-    if (e.target === settingsDialog) settingsDialog.close();
-  });
-
-  D.BOARD_SIZE_OPTIONS.forEach((size) => {
-    const option = document.createElement('option');
-    option.value = String(size);
-    option.textContent = `${size} x ${size}`;
-    boardSizeSelect.appendChild(option);
-  });
-  boardSizeSelect.value = String(config.boardSize);
-  boardSizeSelect.addEventListener('change', (e) => {
-    config = { ...config, boardSize: Number(e.target.value) };
-    persist({ boardSize: config.boardSize });
-    settingsDialog.close();
-    newGame();
-  });
-
-  const gravityDirectionSelect = document.getElementById('gravity-direction-select');
-  CFG.item('gravityDirection').options.forEach((opt) => {
-    gravityDirectionSelect.append(new Option(opt.label, opt.value));
-  });
+  menuBtn.addEventListener('click', () => Menu.show());
+  gameOverMenuBtn.addEventListener('click', () => Menu.show());
 
   Panel.init();
-  Panel.bind('gravityEnabled', document.getElementById('gravity-toggle'), {
-    onSync: (on) => { gravityDirectionSelect.disabled = !on; },
+  Menu.init({
+    status: (id) => ({ best: bests[id] || 0, resumeScore: resumable(id)?.score ?? null }),
+    lastMode: () => modeId,
+    customBoardSize: () => customBoardSize,
+    setCustomBoardSize: (size) => {
+      customBoardSize = size;
+      persist({ customBoardSize });
+    },
+    play: playMode,
   });
-  Panel.bind('gravityDirection', gravityDirectionSelect);
 
   render();
+  updateConfigNote();
+  // A reload mid-game goes straight back to it; otherwise start at the menu.
+  if (!hotData.board && !resumable(modeId)) Menu.show();
 
   // Artifact viewer: carry the live game across a republish.
   if (window.claude?.hot?.snapshot) {
@@ -478,6 +527,7 @@ function start(hotData = {}) {
       moves: state.moves,
       gameOver: state.gameOver,
       bestScore,
+      modeId,
     }));
   }
 }

@@ -115,7 +115,8 @@ const DiceMergeData = (() => {
   const PIECE_SIZE_WEIGHTS = [1, 2, 3].map((size) => ({ size, weight: 0 }));
 
   function rollPieceSize(rng = Math.random) {
-    return weightedPick(PIECE_SIZE_WEIGHTS, (e) => e.weight, rng).size;
+    const allowed = PIECE_SIZE_WEIGHTS.filter((e) => e.size <= params.maxPieceSize);
+    return weightedPick(allowed, (e) => e.weight, rng).size;
   }
 
   // Exactly one pair: the odd die is rolled excluding the pair value.

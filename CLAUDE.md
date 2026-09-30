@@ -15,12 +15,14 @@ global (`DiceMerge*`), and later modules read earlier ones.
 |---|---|---|
 | `src/data.js` | `DiceMergeData` | Static tables + pure functions: pips, colors, mass law, spawn rolls, piece generation, `params` (live balance knobs) |
 | `src/config.js` | `DiceMergeConfig` | Tuning schema + store behind the Tuning panel (see below) |
+| `src/modes.js` | `DiceMergeModes` | The game modes (Stacked, Packed, Custom): which config items each pins, and the card descriptions |
 | `src/state.js` | `DiceMergeState` | Game state as plain data; `placePiece` returns a `steps` timeline; `settle()` is the gravity/merge fixed-point loop |
 | `src/render.js` | `DiceMergeRender` | State → DOM. No game rules |
 | `src/physics.js` | `DiceMergePhysics` | Damped spring (rAF), used by drag snapback |
 | `src/animate.js` | `DiceMergeAnimate` | Plays a `steps` timeline on the board |
 | `src/panel.js` | `DiceMergePanel` | Tuning panel + pinned HUD; `bind()` attaches any other control to a config item |
-| `src/main.js` | `start()` | Wiring: DOM events, drag/tap controller, persistence, Settings dialog |
+| `src/menu.js` | `DiceMergeMenu` | The menu screen: a card per mode, Custom's options inside its card |
+| `src/main.js` | `start()` | Wiring: DOM events, drag/tap controller, per-mode persistence, mode switching |
 
 ## Conventions
 
@@ -45,10 +47,19 @@ nothing (`'main'`, read via `CFG.get` at use time).
   `test/config.test.js` checks every variable is supplied). Players with a
   stored value for an id keep it until they reset.
 - The same config item can have several UI copies (Tuning panel, pinned HUD,
-  Settings dialog). All go through `DiceMergePanel` (`bind()` for anything outside
-  the panel), which keeps every copy in sync.
-- The Settings dialog shows board size (starts a new game) and the Gravity
-  toggle + direction (applies on the next placement).
+  Custom's menu options). All go through `DiceMergePanel` (`bind()`, `watch()`
+  and `set()` for anything outside the panel), which keeps every copy in sync.
+- Presets pin config items through `DiceMergeConfig.setOverrides` (applied on
+  top of the stored values, never written to them), so Tuning edits to those
+  items only take effect in Custom. Custom pins nothing; its board size is
+  saved by `main.js`, everything else lives in the config store.
+
+## Screens and modes
+
+Two screens: the game, and the menu laid over it (the Menu button, or Menu on
+game over). The Tuning button stays reachable from both. Each mode keeps its own
+saved game and best score (`games[modeId]`, `best[modeId]` in `dice-merge:v3`).
+Cards start a fresh game, or resume the mode's unfinished game if it has one.
 
 ## The published artifact
 
