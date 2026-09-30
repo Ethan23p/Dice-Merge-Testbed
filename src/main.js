@@ -283,7 +283,6 @@ function start(hotData = {}) {
     if (springBackPieceEl) {
       springBackPieceEl.classList.remove('piece--dragging', 'piece--tracking');
       springBackPieceEl.style.transform = '';
-      springBackPieceEl.style.translate = '';
     }
     springBackPieceEl = null;
     dragLocked = false;
@@ -432,10 +431,13 @@ function start(hotData = {}) {
       // the cell under it; it's dropped on release, while --dragging stays for the
       // springback.
       drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
-      // The lift lives in `translate`, which eases in (see .piece--tracking),
-      // while the finger offset below is `transform`, which never does. Easing
-      // one property for both would make the piece lag the finger instead.
-      drag.pieceEl.style.translate = `0 ${-drag.liftPx}px`;
+      // The lift is its own animation on `translate`, while the finger offset
+      // below is `transform`, which is never eased. Easing one property for
+      // both would make the piece lag the finger instead.
+      drag.liftAnim = drag.pieceEl.animate(
+        [{ translate: '0 0' }, { translate: `0 ${-drag.liftPx}px` }],
+        { duration: CFG.get('dragLiftMs'), easing: 'cubic-bezier(.2, .8, .3, 1)', fill: 'forwards' },
+      );
     }
 
     drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
@@ -451,10 +453,13 @@ function start(hotData = {}) {
     pieceEl.removeEventListener('pointercancel', onPointerCancel);
 
     pieceEl.classList.remove('piece--tracking');
-    // Fold the lift back into `transform`, which the springback drives.
+    // Fold the lift (however far it has got) into `transform`, which the
+    // springback drives.
     if (dragging) {
+      const lifted = parseFloat(getComputedStyle(pieceEl).translate.split(' ')[1]) || 0;
+      drag.liftAnim.cancel();
+      drag.liftPx = -lifted;
       pieceEl.style.transform = `translate(${drag.targetX}px, ${drag.targetY - drag.liftPx}px)`;
-      pieceEl.style.translate = '';
     }
     clearPreview();
 

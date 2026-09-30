@@ -210,6 +210,28 @@ const DiceMergeMenu = (() => {
     mystery.classList.add('die--mystery');
     mystery.querySelector('.die-label').textContent = '?';
     logo.append(mystery);
+    playWithDice(logo);
+  }
+
+  // Pressing a logo die, or sliding a pressed finger across them, spins each
+  // one as a lone die spins in the game; the mystery die shakes instead.
+  function playWithDice(logo) {
+    let last = null;
+    const poke = (e) => {
+      const die = document.elementFromPoint(e.clientX, e.clientY)?.closest('.die');
+      if (!die || !logo.contains(die)) { last = null; return; }
+      if (die === last) return;
+      last = die;
+      const cls = die.classList.contains('die--mystery') ? 'die--shake' : 'die--spin';
+      die.classList.remove(cls);
+      void die.offsetWidth;
+      die.classList.add(cls);
+      die.addEventListener('animationend', () => die.classList.remove(cls), { once: true });
+    };
+    logo.addEventListener('pointerdown', poke);
+    logo.addEventListener('pointermove', (e) => { if (e.buttons) poke(e); });
+    logo.addEventListener('pointerup', () => { last = null; });
+    logo.addEventListener('pointercancel', () => { last = null; });
   }
 
   return { init, show, hide };

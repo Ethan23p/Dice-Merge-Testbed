@@ -277,7 +277,6 @@ body {
 
 .piece--tracking {
   pointer-events: none;
-  transition: translate var(--cfg-drag-lift-duration) cubic-bezier(.2, .8, .3, 1);
 }
 
 @keyframes die-spin-360 {
@@ -286,6 +285,16 @@ body {
 }
 .die--spin {
   animation: die-spin-360 var(--cfg-single-die-spin) ease-out;
+}
+@keyframes die-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  15% { transform: translateX(-4px) rotate(-10deg); }
+  35% { transform: translateX(4px) rotate(9deg); }
+  55% { transform: translateX(-3px) rotate(-6deg); }
+  75% { transform: translateX(2px) rotate(4deg); }
+}
+.die--shake {
+  animation: die-shake var(--cfg-single-die-spin) ease-out;
 }
 
 .piece--entering {
@@ -650,7 +659,7 @@ body {
 }
 .menu-dice { display: flex; gap: 6px; }
 .die--menu-logo { width: 26px; height: 26px; }
-.menu-dice { gap: 5px; }
+.menu-dice { gap: 5px; touch-action: none; user-select: none; -webkit-user-select: none; }
 
 /* The seventh die: a value the game never deals. */
 .die--mystery {
