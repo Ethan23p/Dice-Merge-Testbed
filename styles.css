@@ -275,6 +275,10 @@ body {
 }
 .piece--dragging .die { box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5); }
 
+.piece--lifting {
+  transition: transform var(--cfg-drag-lift-duration) cubic-bezier(.2, .8, .3, 1);
+}
+
 .piece--tracking {
   pointer-events: none;
 }

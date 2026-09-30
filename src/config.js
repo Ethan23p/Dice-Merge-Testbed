@@ -47,8 +47,9 @@ const DiceMergeConfig = (() => {
     { id: 'shakeDurationMs', group: 'Rejected Drop', label: 'Shake duration', unit: 'ms', initial: 220, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-shake-duration', unit: 'ms' } },
 
     { id: 'dragThresholdPx', group: 'Input Feel', label: 'Drag threshold', unit: 'px', initial: 38, min: 0, max: 300, step: 1, apply: { type: 'main' } },
-    { id: 'hoverDurationMs', group: 'Input Feel', label: 'Cell hover-preview transition', unit: 'ms', initial: 70, min: 0, max: 3000, step: 10, apply: { type: 'css', varName: '--cfg-hover-duration', unit: 'ms' } },
-    { id: 'dragLiftScale', group: 'Input Feel', label: 'Drag lift (× piece cell size)', unit: '×', initial: 1.2, min: 0, max: 10, step: 0.1, apply: { type: 'main' } },
+    { id: 'hoverDurationMs', group: 'Input Feel', label: 'Cell hover-preview transition', unit: 'ms', initial: 0, min: 0, max: 3000, step: 10, apply: { type: 'css', varName: '--cfg-hover-duration', unit: 'ms' } },
+    { id: 'dragLiftMs', group: 'Input Feel', label: 'Drag lift-off duration', unit: 'ms', initial: 90, min: 0, max: 1000, step: 10, apply: { type: 'css', varName: '--cfg-drag-lift-duration', unit: 'ms' } },
+    { id: 'dragLiftScale', group: 'Input Feel', label: 'Drag lift (× piece cell size)', unit: '×', initial: 2.5, min: 0, max: 10, step: 0.1, apply: { type: 'main' } },
 
     { id: 'entranceScale', group: 'Piece Entrance', label: 'Entrance start scale', unit: '×', initial: 0.85, min: 0, max: 3, step: 0.01, apply: { type: 'css', varName: '--cfg-entrance-scale', unit: '' } },
     { id: 'entranceDurationMs', group: 'Piece Entrance', label: 'Entrance duration', unit: 'ms', initial: 160, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-entrance-duration', unit: 'ms' } },

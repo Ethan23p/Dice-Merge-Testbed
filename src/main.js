@@ -430,7 +430,14 @@ function start(hotData = {}) {
       // --tracking disables pointer events on the piece so elementFromPoint finds
       // the cell under it; it's dropped on release, while --dragging stays for the
       // springback.
-      drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
+      drag.pieceEl.classList.add('piece--dragging', 'piece--tracking', 'piece--lifting');
+      // The lift offset is applied on the first move; easing it in keeps the
+      // piece from teleporting out of its slot. Dropped once it has arrived so
+      // tracking the finger stays instant.
+      drag.liftTimeoutId = window.setTimeout(
+        () => drag.pieceEl.classList.remove('piece--lifting'),
+        CFG.get('dragLiftMs')
+      );
     }
 
     drag.pieceEl.style.transform = `translate(${dx}px, ${dy - drag.liftPx}px)`;
@@ -445,7 +452,8 @@ function start(hotData = {}) {
     pieceEl.removeEventListener('pointerup', onPointerUp);
     pieceEl.removeEventListener('pointercancel', onPointerCancel);
 
-    pieceEl.classList.remove('piece--tracking');
+    pieceEl.classList.remove('piece--tracking', 'piece--lifting');
+    clearTimeout(drag.liftTimeoutId);
     clearPreview();
 
     if (!dragging) {
