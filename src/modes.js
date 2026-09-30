@@ -17,7 +17,7 @@ const DiceMergeModes = (() => {
       id: 'packed',
       name: 'Packed',
       face: 3,
-      boardSize: 6,
+      boardSize: 5,
       rules: { gravityEnabled: false, maxPieceSize: 3, mergeMinCluster: 3, forcePairInTriple: true },
     },
     { id: 'custom', name: 'Custom', face: 6, custom: true, rules: {} },

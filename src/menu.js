@@ -205,7 +205,11 @@ const DiceMergeMenu = (() => {
     continueEl = document.getElementById('menu-continue');
     listEl = document.getElementById('mode-list');
     const logo = document.getElementById('menu-dice');
-    [1, 2, 3, 4].forEach((v) => logo.append(R.buildDieNode(v, 'menu-logo')));
+    [1, 2, 3, 4, 5, 6].forEach((v) => logo.append(R.buildDieNode(v, 'menu-logo')));
+    const mystery = R.buildDieNode(7, 'menu-logo');
+    mystery.classList.add('die--mystery');
+    mystery.querySelector('.die-label').textContent = '?';
+    logo.append(mystery);
   }
 
   return { init, show, hide };

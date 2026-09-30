@@ -283,6 +283,7 @@ function start(hotData = {}) {
     if (springBackPieceEl) {
       springBackPieceEl.classList.remove('piece--dragging', 'piece--tracking');
       springBackPieceEl.style.transform = '';
+      springBackPieceEl.style.translate = '';
     }
     springBackPieceEl = null;
     dragLocked = false;
@@ -430,17 +431,14 @@ function start(hotData = {}) {
       // --tracking disables pointer events on the piece so elementFromPoint finds
       // the cell under it; it's dropped on release, while --dragging stays for the
       // springback.
-      drag.pieceEl.classList.add('piece--dragging', 'piece--tracking', 'piece--lifting');
-      // The lift offset is applied on the first move; easing it in keeps the
-      // piece from teleporting out of its slot. Dropped once it has arrived so
-      // tracking the finger stays instant.
-      drag.liftTimeoutId = window.setTimeout(
-        () => drag.pieceEl.classList.remove('piece--lifting'),
-        CFG.get('dragLiftMs')
-      );
+      drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
+      // The lift lives in `translate`, which eases in (see .piece--tracking),
+      // while the finger offset below is `transform`, which never does. Easing
+      // one property for both would make the piece lag the finger instead.
+      drag.pieceEl.style.translate = `0 ${-drag.liftPx}px`;
     }
 
-    drag.pieceEl.style.transform = `translate(${dx}px, ${dy - drag.liftPx}px)`;
+    drag.pieceEl.style.transform = `translate(${dx}px, ${dy}px)`;
     // Hit-test at the lifted position, where the piece is drawn.
     updateDragPreview(e.clientX, e.clientY - drag.liftPx);
   }
@@ -452,8 +450,12 @@ function start(hotData = {}) {
     pieceEl.removeEventListener('pointerup', onPointerUp);
     pieceEl.removeEventListener('pointercancel', onPointerCancel);
 
-    pieceEl.classList.remove('piece--tracking', 'piece--lifting');
-    clearTimeout(drag.liftTimeoutId);
+    pieceEl.classList.remove('piece--tracking');
+    // Fold the lift back into `transform`, which the springback drives.
+    if (dragging) {
+      pieceEl.style.transform = `translate(${drag.targetX}px, ${drag.targetY - drag.liftPx}px)`;
+      pieceEl.style.translate = '';
+    }
     clearPreview();
 
     if (!dragging) {

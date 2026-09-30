@@ -55,7 +55,7 @@ test('descriptions come from the resolved rules', () => {
   const { CFG, M } = loadAll();
   const get = CFG.get;
   assert.equal(M.describe(M.resolve(M.byId('stacked'), 5, get)), '4×4 · gravity up · pieces up to 2 · merge 3');
-  assert.equal(M.describe(M.resolve(M.byId('packed'), 5, get)), '6×6 · no gravity · pieces up to 3 · merge 3');
+  assert.equal(M.describe(M.resolve(M.byId('packed'), 5, get)), '5×5 · no gravity · pieces up to 3 · merge 3');
   CFG.set('mergeMinCluster', 2);
   assert.equal(M.describe(M.resolve(M.byId('custom'), 5, get)), '5×5 · no gravity · pieces up to 3 · merge 2');
 });
