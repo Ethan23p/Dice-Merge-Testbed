@@ -162,24 +162,6 @@ body {
     0 3px 6px rgba(0, 0, 0, 0.35);
 }
 
-@keyframes die-merge-target-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft, rgba(91, 142, 242, 0.55)); }
-  50% { box-shadow: 0 0 0 var(--cfg-pulse-ring) rgba(91, 142, 242, 0); }
-}
-.die--merge-target {
-  animation: die-merge-target-pulse var(--cfg-pulse-duration) ease-out;
-}
-
-/* Animated from animate.js; invisible otherwise. */
-.merge-target-ring {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: 0 0 0 3px var(--accent), 0 0 12px 2px var(--accent-soft);
-  opacity: 0;
-}
-
 @keyframes die-merge-pop {
   0% { transform: scale(0.6); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
   45% {

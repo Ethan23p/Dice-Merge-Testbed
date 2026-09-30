@@ -28,14 +28,6 @@ const DiceMergeConfig = (() => {
     { id: 'settleBeatMs', group: 'Merge Timing', label: 'Pause between cascade waves', unit: 'ms', initial: 70, min: 0, max: 3000, step: 10, apply: { type: 'main' } },
     { id: 'landingBeatMs', group: 'Merge Timing', label: 'Pause before a merge starts converging', unit: 'ms', initial: 0, min: 0, max: 3000, step: 10, apply: { type: 'main' } },
 
-    { id: 'mergeFx', group: 'Merge Impact', label: 'Merge effect (legacy pulses / sonar train)', unit: '', type: 'select', initial: 'legacy', options: [
-      { value: 'legacy', label: 'Legacy' },
-      { value: 'sonar', label: 'Sonar' },
-    ], apply: { type: 'main' } },
-    { id: 'pulseRingPx', group: 'Merge Impact', label: 'Merge-target pulse ring size', unit: 'px', initial: 10, min: 0, max: 250, step: 2, apply: { type: 'css', varName: '--cfg-pulse-ring', unit: 'px' } },
-    { id: 'pulseDurationMs', group: 'Merge Impact', label: 'Merge-target pulse duration', unit: 'ms', initial: 220, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-pulse-duration', unit: 'ms' } },
-    { id: 'pulseBurstDurationMs', group: 'Merge Impact', label: 'Extra pulse ring duration (merges over 3 dice)', unit: 'ms', initial: 220, min: 0, max: 2000, step: 5, apply: { type: 'main' } },
-    { id: 'pulseBurstIntervalMs', group: 'Merge Impact', label: 'Time between extra pulses', unit: 'ms', initial: 80, min: 0, max: 1000, step: 5, apply: { type: 'main' } },
     { id: 'popBaseScale', group: 'Merge Impact', label: 'Merge-pop base scale', unit: '×', initial: 1.15, min: 0.1, max: 8, step: 0.05, apply: { type: 'css', varName: '--cfg-merge-pop-base', unit: '' } },
     { id: 'popPerImpactScale', group: 'Merge Impact', label: 'Merge-pop scale per unit impact', unit: '×', initial: 0.09, min: 0, max: 3, step: 0.01, apply: { type: 'css', varName: '--cfg-merge-pop-per-impact', unit: '' } },
     { id: 'popScaleCap', group: 'Merge Impact', label: 'Merge-pop scale cap', unit: '×', initial: 1.6, min: 1, max: 15, step: 0.1, apply: { type: 'css', varName: '--cfg-merge-pop-cap', unit: '' } },
@@ -44,7 +36,6 @@ const DiceMergeConfig = (() => {
     { id: 'popGlowCapPx', group: 'Merge Impact', label: 'Merge-pop glow cap', unit: 'px', initial: 24, min: 0, max: 500, step: 5, apply: { type: 'css', varName: '--cfg-merge-pop-glow-cap', unit: 'px' } },
     { id: 'popDurationMs', group: 'Merge Impact', label: 'Merge-pop duration', unit: 'ms', initial: 360, min: 0, max: 4000, step: 10, apply: { type: 'css', varName: '--cfg-merge-pop-duration', unit: 'ms' } },
 
-    // Only read when the merge effect is Sonar (see animate.js).
     { id: 'sonarBeatMs', group: 'Sonar Pulse', label: 'Time between landings (beat period)', unit: 'ms', initial: 110, min: 20, max: 1000, step: 5, apply: { type: 'main' } },
     { id: 'sonarSpeedUpPct', group: 'Sonar Pulse', label: 'Rhythm speed-up per beat', unit: '%', initial: 10, min: 0, max: 60, step: 1, apply: { type: 'main' } },
     { id: 'sonarRingMs', group: 'Sonar Pulse', label: 'Ring lifetime', unit: 'ms', initial: 380, min: 40, max: 2000, step: 10, apply: { type: 'main' } },

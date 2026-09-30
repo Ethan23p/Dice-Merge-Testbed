@@ -62,59 +62,6 @@ const DiceMergeAnimate = (() => {
     return hopDurationForValue(maxValue);
   }
 
-  // Merges bigger than this send out one extra ripple per additional die.
-  const EXTRA_PULSE_BASELINE = 3;
-
-  function extraPulseCount(pop) {
-    return Math.max(0, (pop.size || 0) - EXTRA_PULSE_BASELINE);
-  }
-
-  // How long a pop's ripples take to finish, so the reveal can wait for them.
-  function pulseTrainMs(pop) {
-    const extra = extraPulseCount(pop);
-    if (extra === 0) return CFG.get('pulseDurationMs');
-    return CFG.get('pulseDurationMs')
-      + (extra - 1) * CFG.get('pulseBurstIntervalMs')
-      + Math.max(CFG.get('pulseBurstIntervalMs'), CFG.get('pulseBurstDurationMs'));
-  }
-
-  // Marks the cells dice are converging on, on the already-drawn board. After
-  // the first pulse, each die past the third adds a quick thump plus a ring,
-  // each stronger than the last. The survivor sits above the incoming dice so
-  // the train stays visible. `scale` is animated, never `transform`, which the
-  // pulse/pop keyframes own.
-  function highlightTargets(boardEl, pops) {
-    pops.forEach((pop) => {
-      const die = R.cellAt(boardEl, pop.r, pop.c)?.querySelector('.die');
-      if (!die) return;
-      die.classList.add('die--merge-target');
-      const extra = extraPulseCount(pop);
-      if (extra === 0) return;
-      die.style.position = 'relative';
-      die.style.zIndex = '999';
-      const intervalMs = CFG.get('pulseBurstIntervalMs');
-      const ringMs = CFG.get('pulseBurstDurationMs');
-      for (let i = 0; i < extra; i++) {
-        const delay = CFG.get('pulseDurationMs') + i * intervalMs;
-        const strength = Math.min(1, (i + 1) / 4);
-        die.animate(
-          [{ scale: 1 }, { scale: 1 + 0.06 + 0.1 * strength }, { scale: 1 }],
-          { duration: Math.max(40, intervalMs), delay, easing: 'ease-out' },
-        );
-        const ring = document.createElement('span');
-        ring.className = 'merge-target-ring';
-        die.appendChild(ring);
-        ring.animate(
-          [
-            { opacity: 0.6 + 0.4 * strength, transform: 'scale(1)' },
-            { opacity: 0, transform: `scale(${1.5 + 0.7 * strength})` },
-          ],
-          { duration: ringMs, delay, easing: 'ease-out', fill: 'backwards' },
-        );
-      }
-    });
-  }
-
   function animateMoves(boardEl, moves, hopMs) {
     moves.forEach((m, i) => {
       const start = m.path[0];
@@ -131,8 +78,9 @@ const DiceMergeAnimate = (() => {
   // redraw wipes the board and would cut them off mid-expansion.
 
   // A ring the size of the die at (r, c) that travels outward at constant
-  // line width while fading. `amp` (0..1) scales its travel and brightness.
-  function emitRing(boardEl, r, c, amp) {
+  // line width while fading, in the die's own color (the pre-merge value).
+  // `amp` (0..1) scales its travel and brightness.
+  function emitRing(boardEl, r, c, amp, color) {
     const cell = R.cellAt(boardEl, r, c);
     const die = cell?.querySelector('.die');
     if (!cell || !die) return;
@@ -150,7 +98,7 @@ const DiceMergeAnimate = (() => {
       zIndex: '20',
       pointerEvents: 'none',
       boxSizing: 'border-box',
-      border: `${CFG.get('sonarRingWidthPx')}px solid var(--accent)`,
+      border: `${CFG.get('sonarRingWidthPx')}px solid ${color}`,
     });
     document.body.appendChild(ring);
     const anim = ring.animate(
@@ -211,6 +159,8 @@ const DiceMergeAnimate = (() => {
     let order = 0;
     step.pops.forEach((pop) => {
       const targetDie = R.cellAt(boardEl, pop.r, pop.c)?.querySelector('.die');
+      // Read now: by the last landing the redraw may already have replaced it.
+      const color = targetDie?.style.getPropertyValue('--die-color');
       if (targetDie) {
         targetDie.style.position = 'relative';
         targetDie.style.zIndex = '999';
@@ -225,7 +175,7 @@ const DiceMergeAnimate = (() => {
         const last = k === schedule.length - 1;
         const amp = schedule.length > 1 ? buildFrom + (1 - buildFrom) * (k / (schedule.length - 1)) : 1;
         window.setTimeout(() => {
-          emitRing(boardEl, pop.r, pop.c, amp);
+          emitRing(boardEl, pop.r, pop.c, amp, color);
           if (!last) beatDie(boardEl, pop.r, pop.c, amp);
         }, landing);
         redrawAt = Math.max(redrawAt, landing);
@@ -234,10 +184,10 @@ const DiceMergeAnimate = (() => {
     return redrawAt;
   }
 
-  // A step with no moves is the piece landing: shown at once. Otherwise: flash
-  // targets, fly dice, wait for the longer of flight and ripples (capped by
-  // settleMaxMs), pause settleBeatMs, then draw the step's board. With the Sonar
-  // effect a merge step instead redraws at its last landing and pauses after.
+  // A step with no moves is the piece landing: shown at once. A merge step
+  // plays the sonar train, redraws at its last landing, then pauses
+  // settleBeatMs. A gravity step (moves, no pops) flies everything at once,
+  // pauses settleBeatMs, then redraws.
   function playTimeline(boardEl, steps, onDone) {
     playing = true;
     let i = 0;
@@ -259,7 +209,7 @@ const DiceMergeAnimate = (() => {
         return;
       }
 
-      if (CFG.get('mergeFx') === 'sonar' && step.pops.length) {
+      if (step.pops.length) {
         const redrawAt = startSonar(boardEl, step, stepHopMs(step));
         window.setTimeout(() => {
           R.renderBoard(boardEl, step.board, { pops: step.pops });
@@ -270,12 +220,9 @@ const DiceMergeAnimate = (() => {
         return;
       }
 
-      highlightTargets(boardEl, step.pops);
       const hopMs = stepHopMs(step);
       const maxSegments = step.moves.reduce((max, m) => Math.max(max, m.path.length - 1), 0);
-
-      const maxPulseTrainMs = step.pops.reduce((max, pop) => Math.max(max, pulseTrainMs(pop)), 0);
-      const flightMs = Math.min(CFG.get('settleMaxMs'), Math.max(maxSegments * hopMs, maxPulseTrainMs));
+      const flightMs = Math.min(CFG.get('settleMaxMs'), maxSegments * hopMs);
       animateMoves(boardEl, step.moves, hopMs);
 
       window.setTimeout(() => {
