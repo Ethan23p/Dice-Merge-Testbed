@@ -431,11 +431,13 @@ function start(hotData = {}) {
       // the cell under it; it's dropped on release, while --dragging stays for the
       // springback.
       drag.pieceEl.classList.add('piece--dragging', 'piece--tracking');
-      // The lift is its own animation on `translate`, while the finger offset
-      // below is `transform`, which is never eased. Easing one property for
-      // both would make the piece lag the finger instead.
+      // By now the finger is a threshold's distance from where it landed, and
+      // `transform` (below) puts the piece there at once. `translate` starts by
+      // cancelling that jump and eases out to the lift, so the piece leaves its
+      // slot smoothly instead of teleporting. It is a separate property because
+      // easing the finger offset itself would make the piece lag the finger.
       drag.liftAnim = drag.pieceEl.animate(
-        [{ translate: '0 0' }, { translate: `0 ${-drag.liftPx}px` }],
+        [{ translate: `${-dx}px ${-dy}px` }, { translate: `0 ${-drag.liftPx}px` }],
         { duration: CFG.get('dragLiftMs'), easing: 'cubic-bezier(.2, .8, .3, 1)', fill: 'forwards' },
       );
     }
@@ -456,10 +458,11 @@ function start(hotData = {}) {
     // Fold the lift (however far it has got) into `transform`, which the
     // springback drives.
     if (dragging) {
-      const lifted = parseFloat(getComputedStyle(pieceEl).translate.split(' ')[1]) || 0;
+      const [ex = 0, ey = 0] = getComputedStyle(pieceEl).translate.split(' ').map(parseFloat);
       drag.liftAnim.cancel();
-      drag.liftPx = -lifted;
-      pieceEl.style.transform = `translate(${drag.targetX}px, ${drag.targetY - drag.liftPx}px)`;
+      drag.targetX += ex || 0;
+      drag.targetY += ey || 0;
+      pieceEl.style.transform = `translate(${drag.targetX}px, ${drag.targetY}px)`;
     }
     clearPreview();
 
@@ -477,7 +480,7 @@ function start(hotData = {}) {
     }
 
     if (target) shakeRejectedCells(S.shapeCellsAt(state.queue[0], target.r, target.c), drag.mass);
-    springBack(pieceEl, drag.targetX, drag.targetY - drag.liftPx, drag.mass);
+    springBack(pieceEl, drag.targetX, drag.targetY, drag.mass);
     drag = null;
   }
 
